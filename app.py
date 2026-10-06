@@ -31,6 +31,25 @@ LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 </svg>"""
 LOGO_URI = "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).decode()
 
+LOGO_URI_BLUE = "data:image/svg+xml;base64," + base64.b64encode(
+    LOGO_SVG.replace("#FF9A3D", "#7DB8FF").replace("#FF5A00", "#2F7BF5").encode()).decode()
+
+
+def _theme_type():
+    try:
+        return st.context.theme.type  # "light" / "dark" (newer Streamlit)
+    except Exception:
+        return None
+
+
+_t = _theme_type()
+if _t == "light":
+    LIGHT_OPEN, LIGHT_CLOSE = "", ""                                    # always apply
+elif _t == "dark":
+    LIGHT_OPEN, LIGHT_CLOSE = "@media not all {", "}"                   # never apply
+else:
+    LIGHT_OPEN, LIGHT_CLOSE = "@media (prefers-color-scheme: light) {", "}"  # follow system
+
 # --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
 st.markdown(f"""
 <style>
@@ -230,6 +249,39 @@ input[placeholder="Search item name..."] {{
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
+/* ===== LIGHT MODE ONLY: swap orange for soft light blue (dark mode untouched) ===== */
+{LIGHT_OPEN}
+.stApp::before {{ background: radial-gradient(circle, rgba(96,165,250,.22), rgba(96,165,250,0) 68%); }}
+.stApp::after {{ background: radial-gradient(circle, rgba(125,211,252,.24), rgba(125,211,252,0) 68%); }}
+[data-testid="stAppViewContainer"]::before {{ background: radial-gradient(circle, rgba(147,197,253,.20), rgba(147,197,253,0) 68%); }}
+
+.card::before {{ background: linear-gradient(90deg, #3B82F6, #7DD3FC); }}
+.card:hover {{ box-shadow: 0 14px 30px rgba(59,130,246,.16); }}
+.badge-orange {{ background: rgba(59,130,246,.14); color: #2563EB; }}
+.area-row b {{ color: #2563EB; }}
+.total-bar {{ background: rgba(59,130,246,.10); border-color: rgba(59,130,246,.32); }}
+.total-bar .t-amount {{ color: #2563EB; }}
+
+[data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
+    background: #3B82F6; border-color: #3B82F6; }}
+[data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover {{
+    background: #2563EB; border-color: #2563EB; }}
+
+/* Charts: recolor orange -> sky blue */
+div[data-testid="stVegaLiteChart"] {{ filter: hue-rotate(180deg); }}
+
+/* Sidebar + logo */
+.brand-logo {{ background-image: url("{LOGO_URI_BLUE}"); box-shadow: 0 4px 12px rgba(59,130,246,.30); }}
+section[data-testid="stSidebar"] {{
+    background: linear-gradient(180deg, #10141c 0%, #141b29 55%, #0f2038 100%) !important; }}
+section[data-testid="stSidebar"]::before {{
+    background: radial-gradient(circle, rgba(59,130,246,.42), rgba(59,130,246,0) 70%); }}
+section[data-testid="stSidebar"]::after {{
+    background: radial-gradient(circle, rgba(125,211,252,.22), rgba(125,211,252,0) 70%); }}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {{
+    background: linear-gradient(90deg, #3B82F6, #60A5FA); box-shadow: 0 8px 20px rgba(59,130,246,.35); }}
+{LIGHT_CLOSE}
 </style>
 """, unsafe_allow_html=True)
 
