@@ -1,7 +1,8 @@
-import sqlite3
-import altair as alt
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import altair as alt
+import psycopg2
+from sqlalchemy import create_engine
 
 # --- 1. PAGE CONFIG ---
 st.set_page_config(
@@ -17,14 +18,11 @@ MUTED = "#6b7280"
 LINE = "#e5e7eb"
 PALETTE = ["#FF6A00", "#FF8A1F", "#FFA826", "#FFC53D", "#FFE08A"]
 
-# --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
+# --- 2. CUSTOM CSS ---
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-/* Theme-aware: no hard-coded backgrounds or text colors.
-   Streamlit's own light/dark theme supplies those; we only add
-   translucent greys (work on both) and the orange accent. */
 html, body, [class*="css"], .stApp {{
     font-family: 'Plus Jakarta Sans', 'Helvetica Neue', sans-serif;
 }}
@@ -41,7 +39,6 @@ h1, h2, h3 {{ font-weight: 700; letter-spacing: -0.02em; }}
 .brand-sub {{ font-size:12px; opacity:.65; }}
 .menu-label {{ font-size:14px; opacity:.65; margin-bottom:6px; }}
 
-/* Sidebar nav = buttons styled as menu items (robust across Streamlit versions) */
 section[data-testid="stSidebar"] .stButton > button {{
     background: transparent; border: none; box-shadow: none;
     justify-content: flex-start; text-align: left;
@@ -59,7 +56,6 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] p,
 section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] p {{ color: {ORANGE}; }}
 
-/* Cards */
 .card {{
     background: rgba(128,128,128,.07);
     border: 1px solid rgba(128,128,128,.28);
@@ -81,7 +77,6 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 }}
 .area-row b {{ color:{ORANGE}; font-weight:600; width:44px; display:inline-block; }}
 
-/* Total bar under tables */
 .total-bar {{
     display:flex; justify-content:space-between; align-items:center;
     margin-top:8px; padding:14px 20px; border-radius:12px;
@@ -91,7 +86,6 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 .total-bar .t-sub {{ font-size:12px; opacity:.65; }}
 .total-bar .t-amount {{ font-size:24px; font-weight:700; color:{ORANGE}; }}
 
-/* Buttons in the main area: orange accent, white text */
 [data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
     background:{ORANGE}; color:#fff; border:1px solid {ORANGE};
     border-radius:8px; font-weight:600; padding: 0.5rem 1rem;
@@ -101,7 +95,6 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 }}
 [data-testid="stMain"] .stButton > button p, [data-testid="stMain"] .stFormSubmitButton > button p {{ color:#fff; }}
 
-/* Inputs & tables: keep rounded corners, let theme set colors */
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
@@ -109,30 +102,27 @@ div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border
 """, unsafe_allow_html=True)
 
 
-# --- 3. DATABASE ---
-DB = "inventory.db"
+# --- 3. DATABASE (SUPABASE / POSTGRESQL) ---
+def get_engine():
+    db_url = st.secrets["DATABASE_URL"]
+    return create_engine(db_url)
 
 
 def init_db():
-    conn = sqlite3.connect(DB)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            category TEXT,
-            quantity INTEGER,
-            price REAL,
-            min_threshold INTEGER DEFAULT 5
-        )
-    """)
-    # Migration: add new columns to an existing database
-    existing = [r[1] for r in conn.execute("PRAGMA table_info(items)")]
-    if "unit" not in existing:
-        conn.execute("ALTER TABLE items ADD COLUMN unit TEXT DEFAULT 'pcs'")
-    if "description" not in existing:
-        conn.execute("ALTER TABLE items ADD COLUMN description TEXT DEFAULT ''")
-    conn.commit()
-    conn.close()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS items (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                category TEXT,
+                quantity INTEGER,
+                price REAL,
+                min_threshold INTEGER DEFAULT 5,
+                unit TEXT DEFAULT 'Pcs.',
+                description TEXT DEFAULT ''
+            )
+        """)
 
 
 UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
@@ -140,20 +130,18 @@ UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
 
 
 def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", description=""):
-    conn = sqlite3.connect(DB)
-    conn.execute(
-        "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (name, category, quantity, price, min_threshold, unit, description),
-    )
-    conn.commit()
-    conn.close()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (name, category, quantity, price, min_threshold, unit, description),
+        )
 
 
 def get_inventory():
-    conn = sqlite3.connect(DB)
-    df = pd.read_sql_query("SELECT * FROM items", conn)
-    conn.close()
+    engine = get_engine()
+    df = pd.read_sql("SELECT * FROM items ORDER BY id ASC", engine)
     df["unit"] = df["unit"].fillna("Pcs.")
     df["description"] = df["description"].fillna("")
     df["amount"] = df["quantity"] * df["price"]
@@ -161,17 +149,21 @@ def get_inventory():
 
 
 def update_quantity(item_id, new_quantity):
-    conn = sqlite3.connect(DB)
-    conn.execute("UPDATE items SET quantity = ? WHERE id = ?", (new_quantity, item_id))
-    conn.commit()
-    conn.close()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "UPDATE items SET quantity = %s WHERE id = %s",
+            (new_quantity, item_id)
+        )
 
 
 def delete_item(item_id):
-    conn = sqlite3.connect(DB)
-    conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
-    conn.commit()
-    conn.close()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "DELETE FROM items WHERE id = %s",
+            (item_id,)
+        )
 
 
 # --- 4. UI HELPERS ---
@@ -241,14 +233,13 @@ def main():
                       on_click=go_to, args=(p,))
         try:
             st.sidebar.button(label, icon=icon, **kwargs)
-        except TypeError:  # older Streamlit without icon support
+        except TypeError: 
             st.sidebar.button(label, **kwargs)
 
     df = get_inventory()
 
     # ================= DASHBOARD =================
     if choice == "Dashboard":
-        # Top bar: search + Add New Item
         top_search, top_btn = st.columns([6, 1.2])
         with top_search:
             search_query = st.text_input("Search", placeholder="🔍  Search item name...",
@@ -281,7 +272,6 @@ def main():
 
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-        # Chart + category breakdown
         agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
                  .sort_values("value"))
         agg["pct"] = agg["value"] / agg["value"].sum() * 100
@@ -316,7 +306,6 @@ def main():
             st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
                         unsafe_allow_html=True)
 
-        # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
         top = df.sort_values("value", ascending=False).head(5).copy()
@@ -331,7 +320,6 @@ def main():
             },
         )
 
-        # Full inventory with filters
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
         f1, f2 = st.columns([2, 1])
@@ -373,8 +361,8 @@ def main():
             with col1:
                 name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
                 category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                      "Networking Equipment", "Furniture & Fixtures",
-                                                      "ICT Equipment"])
+                                                     "Networking Equipment", "Furniture & Fixtures",
+                                                     "ICT Equipment"])
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
                 description = st.text_area("Description (optional)", height=100,
                                            placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
