@@ -102,9 +102,14 @@ div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border
 """, unsafe_allow_html=True)
 
 
-# --- 3. DATABASE (SUPABASE / POSTGRESQL) ---
 def get_engine():
     db_url = st.secrets["DATABASE_URL"]
+    # Force SQLAlchemy to use the psycopg2 driver
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif db_url.startswith("postgresql://"):
+        db_url.startswith("postgresql://")
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return create_engine(db_url)
 
 
