@@ -113,7 +113,6 @@ def get_engine():
     elif db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
         
-    # Ensure SSL mode is enabled for Supabase pooler
     if "?" not in db_url:
         db_url += "?sslmode=require"
     elif "sslmode" not in db_url:
@@ -137,6 +136,10 @@ def init_db():
                 description TEXT DEFAULT ''
             )
         """)
+        # Automatically add missing columns if the table already existed
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Pcs.'")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS min_threshold INTEGER DEFAULT 5")
 
 
 UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
