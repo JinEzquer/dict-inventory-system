@@ -136,7 +136,6 @@ def init_db():
                 description TEXT DEFAULT ''
             )
         """)
-        # Automatically add missing columns if the table already existed
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Pcs.'")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS min_threshold INTEGER DEFAULT 5")
@@ -154,8 +153,11 @@ def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", descri
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (name, category, quantity, price, min_threshold, unit, description),
         )
+    # Clear cache so data updates immediately
+    st.cache_data.clear()
 
 
+@st.cache_data(ttl=60)
 def get_inventory():
     engine = get_engine()
     df = pd.read_sql("SELECT * FROM items ORDER BY id ASC", engine)
@@ -172,6 +174,7 @@ def update_quantity(item_id, new_quantity):
             "UPDATE items SET quantity = %s WHERE id = %s",
             (new_quantity, item_id)
         )
+    st.cache_data.clear()
 
 
 def delete_item(item_id):
@@ -181,6 +184,7 @@ def delete_item(item_id):
             "DELETE FROM items WHERE id = %s",
             (item_id,)
         )
+    st.cache_data.clear()
 
 
 # --- 4. UI HELPERS ---
