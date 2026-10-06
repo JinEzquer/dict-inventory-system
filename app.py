@@ -103,13 +103,22 @@ div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border
 
 
 def get_engine():
+    if "DATABASE_URL" not in st.secrets:
+        st.error("🚨 **DATABASE_URL is missing!** Please add it in your Streamlit Cloud App Settings -> Secrets.")
+        st.stop()
+        
     db_url = st.secrets["DATABASE_URL"]
-    # Force SQLAlchemy to use the psycopg2 driver
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
     elif db_url.startswith("postgresql://"):
-        db_url.startswith("postgresql://")
         db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
+    # Ensure SSL mode is enabled for Supabase pooler
+    if "?" not in db_url:
+        db_url += "?sslmode=require"
+    elif "sslmode" not in db_url:
+        db_url += "&sslmode=require"
+        
     return create_engine(db_url)
 
 
