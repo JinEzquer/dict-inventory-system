@@ -19,9 +19,8 @@ MUTED = "#6b7280"
 LINE = "#e5e7eb"
 PALETTE = ["#FF6A00", "#FF8A1F", "#FFA826", "#FFC53D", "#FFE08A"]
 
-SEARCH_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD1mlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+CiAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIj4KICAgICAgPGRjOmNyZWF0b3I+PHJkZjpTZXE+PHJkZjpsaT5GcmVlaWNvbjwvcmRmOmxpPjwvcmRmOlNlcT48L2RjOmNyZWF0b3I+CiAgICAgIDxkYzpyaWdodHM+PHJkZjpBbHQ+PHJkZjpsaSB4bWw6bGFuZz0ieC1kZWZhdWx0Ij5GcmVlIGZvciBwZXJzb25hbCBhbmQgY29tbWVyY2lhbCB1c2UgLSBmcmVlaWNvbi5jb208L3JkZjpsaT48L3JkZjpBbHQ+PC9kYzpyaWdodHM+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6SXB0YzR4bXBDb3JlPSJodHRwOi8vaXB0Yy5vcmcvc3RkL0lwdGM0eG1wQ29yZS8xLjAveG1sbnMvIj4KICAgICAgPElwdGM0eG1wQ29yZTpDcmVkaXRMaW5lPmZyZWVpY29uLmNvbTwvSXB0YzR4bXBDb3JlOkNyZWRpdExpbmU+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6cGhvdG9zaG9wPSJodHRwOi8vbnMuYWRvYmUuY29tL3Bob3Rvc2hvcC8xLjAvIj4KICAgICAgPHBob3Rvc2hvcDpDcmVkaXQ+ZnJlZWljb24uY29tPC9waG90b3Nob3A6Q3JlZGl0Pgog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"
-
-LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+SEARCH_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD1mlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+CiAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIj4KICAgICAgPGRjOmNyZWF0b3I+PHJkZjpTZXE+PHJkZjpsaT5GcmVlaWNvbjwvcmRmLmxpPjwvcmRmOlNlcT48L2RjOmNyZWF0b3I+CiAgICAgIDxkYzpyaWdodHM+PHJkZjpBbHQ+PHJkZjpsaSB4bWw6bGFuZz0ieC1kZWZhdWx0Ij5GcmVlIGZvciBwZXJzb25hbCBhbmQgY29tbWVyY2lhbCB1c2UgLSBmcmVlaWNvbi5jb208L3JkZjpsaT48L3JkZjpBbHQ+PC9kYzpyaWdodHM+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6SXB0YzR4bXBDb3JlPSJodHRwOi8vaXB0Yy5vcmcvc3RkL0lwdGM0eG1wQ29yZS8xLjAveG1sbnMvIj4KICAgICAgPElwdGM0eG1wQ29yZTpDcmVkaXRMaW5lPmZyZWVpY29uLmNvbTwvSXB0YzR4bXBDb3JlOkNyZWRpdExpbmU+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6cGhvdG9zaG9wPSJodHRwOi8vbnMuYWRvYmUuY29tL3Bob3Rvc2hvcC8xLjAvIj4KICAgICAgPHBob3Rvc2hvcDpDcmVkaXQ+ZnJlZWljb24uY29tPC9waG90b3Nob3A6Q3JlZGl0PgogICAgICA8cGhvdG9zaG9wOlNvdXJjZT5mcmVlaWNvbi5jb208L3Bob3Rvc2hvcDpTb3VyY2U+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgo8P3hwYWNrZXQgZW5kPSJ3Ij8+W1BtjgAAC0VJREFUeAHc2wWMpUkRB/C3EDjc9YDD3Q5CsMOdIMEtuLsE1xDcEpzgLsHd/TjcDrfDDjhcLtgBAe7/6339Xc23b2bnzXtvd2cnVa+quvur7q6vpbr6m+NN9o2/g9KMWwefHnxH8AvB7wd/GvxekCz9GeFvE1Q+ZHHYmwY4f5r/pKAO/jz0jcGHBW8cvExQ/jlCLxAkS39o+DcElffck8OfJ7hl2BsGuHJi+8GgDjw6VAdD5gbNPSpP/TD4oeAhwblhTxrg3Gnd+4KfCl4nuCO4HvwnGX8I/iL4x+C/g+sBPddO5mHB9wbVE7I52BMG0MD7pznfDF4vOIb/J+HzwScGdeRsoQcETx80108XeqKg6XCtUOWsCf8LP4brJ+HbwQcEN9W3TRWKsq3CyfKgxeu5oScJVvhTBJ05Z+jlg48LfiT4yyCjhAxANu8/mhTlLhfqTeONlIgDMNZzIr09ePLghrBKA3iDn0ntNwpW+EeERwa9XR3QsYhzw8/yBAMaGY8J/7dgBfV+OglnCK4LqzKASj+XWg8OVvhkhAsGnxb8e3AWnDGJVwjeNHjg8EyiJVAKvJzVepK7eZ1wY48nZq6cIeUaABiN7E40P4+7b+rQ36l1qgU1G+wGfX0b7L/qX7fXfX/fHwQ956QGg0eWbT/wQx4r0C2Q7+O5B9bL105KkYl6V/l17qD8K+qfE5lU6G9B00sO1zXF6cE165KzH2jL3o62Yy+mK4q5N+zWq0g/m760Kj+1+H7+lD+fL2/b/61f9/h8NfX08l95lXvR8GvW30bKffDfv3F71rO3O4e9B27vNl7D3+6N8W6D9O65aI2l31n+/U2t958uF8e4aNfUef+b3tX4N2vN6t+wN59L6lC55/Jz+wTj6+8mBv7c/7P8B/l/v5z7//Wj5B3K/0T+t/3P85fN3P648/2v7f4u+ff8/wH8//v14A3gE/3+l33X+4O//XWv9/gN3f3//3f1e5O//1rP3+/v7+v8H9rNrf6S/vf9/vf2+0X8T177/X7v9v+7fv9/f/33t7P3+/r7vf38n+L/v3b8//8f5v4F6b7/vf3/tf9/vX//v38X/gX///1b//v8P/+1v/9/sWb+9f+H3f79/sf/n///+8P//t6Nf///v////+w87D2r9v78P6v9u4f6f7r/+vf4f8f7v/+Pv9/v9/f8///9f7sPu/3+/+78r8v///v7/7r////8A6f////v7u7u7v////7vv8f/u+u///7///vf7f///vu/f///v////9//////9vv//////v///v///////7v//////v///v//v///7/////fv//v///v////v/////v///////////////////7////////3////3//v///v//////7//v///v////////vvv//v///////3////7//v///v///////vv///////v///////3////7//v///v///////7v//////v////////////////////////////////////////////////7////////v///////v///////7f//////v//////77f//v///v//vv///v//vv///v//////7v//////7v//////7v//////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------530x530.png",
+LOGO_SVG = """<svg xmlns="http://v3.org/2000/svg" viewBox="0 0 48 48">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#FF9A3D"/><stop offset="1" stop-color="#FF5A00"/></linearGradient></defs>
 <rect width="48" height="48" rx="13" fill="url(#g)"/>
@@ -31,14 +30,11 @@ LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 </svg>"""
 LOGO_URI = "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).decode()
 
-# --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
+# --- 2. CUSTOM CSS ---
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-/* Theme-aware: no hard-coded backgrounds or text colors.
-   Streamlit's own light/dark theme supplies those; we only add
-   translucent greys (work on both) and the orange accent. */
 html, body, [class*="css"], .stApp {{
     font-family: 'Plus Jakarta Sans', 'Helvetica Neue', sans-serif;
 }}
@@ -53,7 +49,7 @@ h1, h2, h3 {{ font-weight: 700; letter-spacing: -0.02em; }}
 .brand-sub {{ font-size:12px; opacity:.65; }}
 .menu-label {{ font-size:14px; opacity:.65; margin-bottom:6px; }}
 
-/* ===== SIDEBAR: dark navy panel with animated orange glow ===== */
+/* ===== SIDEBAR ===== */
 section[data-testid="stSidebar"] {{
     background: linear-gradient(180deg, #12141a 0%, #181b24 55%, #26170a 100%) !important;
     border-right: 1px solid rgba(255,255,255,.07);
@@ -122,7 +118,7 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 .side-foot .foot-title {{ margin-top:10px; font-size:13px; font-weight:600; color:#f1f5f9; }}
 .side-foot .foot-sub {{ font-size:12px; color:#8b94a5; }}
 
-/* ===== MAIN AREA: animated background ===== */
+/* ===== MAIN AREA ===== */
 .stApp {{
     isolation: isolate;
     background-image: radial-gradient(rgba(128,128,128,.16) 1px, transparent 1px);
@@ -153,7 +149,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 @keyframes blobB {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(-14vw,-10vh) scale(1.22); }} }}
 @keyframes blobC {{ from {{ transform: translate(0,0) scale(.9); }} to {{ transform: translate(-18vw,14vh) scale(1.1); }} }}
 
-/* Cards: glass look, soft entrance, hover lift */
 .card, .total-bar {{ backdrop-filter: blur(10px); animation: fadeUp .5s ease both;
     transition: transform .2s ease, box-shadow .2s ease; }}
 .card:hover {{ transform: translateY(-4px); box-shadow: 0 14px 30px rgba(255,106,0,.16); }}
@@ -165,7 +160,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
     .card, .total-bar, .side-foot .dot {{ animation: none !important; }}
 }}
 
-/* Cards */
 .card {{
     background: rgba(128,128,128,.07);
     border: 1px solid rgba(128,128,128,.28);
@@ -187,7 +181,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 }}
 .area-row b {{ color:{ORANGE}; font-weight:600; width:44px; display:inline-block; }}
 
-/* Search box: custom icon image (theme-aware via mask) */
 [data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"] {{ position: relative; }}
 [data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"]::before {{
     content: ""; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
@@ -198,7 +191,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 }}
 [data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) input {{ padding-left: 44px !important; }}
 
-/* Total bar under tables */
 .total-bar {{
     display:flex; justify-content:space-between; align-items:center;
     margin-top:8px; padding:14px 20px; border-radius:12px;
@@ -208,7 +200,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 .total-bar .t-sub {{ font-size:12px; opacity:.65; }}
 .total-bar .t-amount {{ font-size:24px; font-weight:700; color:{ORANGE}; }}
 
-/* Buttons in the main area: orange accent, white text */
 [data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
     background:{ORANGE}; color:#fff; border:1px solid {ORANGE};
     border-radius:8px; font-weight:600; padding: 0.5rem 1rem;
@@ -218,7 +209,6 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 }}
 [data-testid="stMain"] .stButton > button p, [data-testid="stMain"] .stFormSubmitButton > button p {{ color:#fff; }}
 
-/* Inputs & tables: keep rounded corners, let theme set colors */
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
@@ -278,7 +268,7 @@ def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", descri
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (name, category, quantity, price, min_threshold, unit, description),
         )
-    st.cache_data.clear()  # refresh data immediately
+    st.cache_data.clear()
 
 
 @st.cache_data(ttl=60)
@@ -373,7 +363,7 @@ def main():
                       on_click=go_to, args=(p,))
         try:
             st.sidebar.button(label, icon=icon, **kwargs)
-        except TypeError:  # older Streamlit without icon support
+        except TypeError:
             st.sidebar.button(label, **kwargs)
 
     st.sidebar.markdown("""
@@ -388,7 +378,6 @@ def main():
 
     # ================= DASHBOARD =================
     if choice == "Dashboard":
-        # Top bar: search + Add New Item
         top_search, top_btn = st.columns([6, 1.2])
         with top_search:
             search_query = st.text_input("Search", placeholder="Search item name...",
@@ -397,7 +386,7 @@ def main():
             try:
                 st.button("Add New Item", icon=":material/add:", use_container_width=True,
                           on_click=go_to, args=("Add Item",))
-            except TypeError:  # older Streamlit without icon support
+            except TypeError:
                 st.button("Add New Item", use_container_width=True, on_click=go_to, args=("Add Item",))
 
         page_header("Key Metrics", "DICT Negros Island Region · Office supply & property inventory")
@@ -425,7 +414,6 @@ def main():
 
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-        # Chart + category breakdown
         agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
                  .sort_values("value"))
         agg["pct"] = agg["value"] / agg["value"].sum() * 100
@@ -460,7 +448,6 @@ def main():
             st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
                         unsafe_allow_html=True)
 
-        # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
         top = df.sort_values("value", ascending=False).head(5).copy()
@@ -475,7 +462,6 @@ def main():
             },
         )
 
-        # Full inventory with filters
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
         f1, f2 = st.columns([2, 1])
@@ -517,8 +503,8 @@ def main():
             with col1:
                 name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
                 category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                      "Networking Equipment", "Furniture & Fixtures",
-                                                      "ICT Equipment"])
+                                                     "Networking Equipment", "Furniture & Fixtures",
+                                                     "ICT Equipment"])
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
                 description = st.text_area("Description (optional)", height=100,
                                            placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
@@ -536,7 +522,7 @@ def main():
                              final_unit, description.strip())
                     st.success(f"Saved **{name}** to the inventory.")
 
-    # ================= RESTOCK =================
+    # ================= RESTOCK / ADJUST =================
     elif choice == "Restock / Adjust":
         page_header("Restock / Adjust Stock",
                     "Update quantities when shipments arrive or items are issued to personnel.")
@@ -558,40 +544,32 @@ def main():
             with col1:
                 item_id = st.selectbox("Select item ID", df["id"].tolist())
                 selected = df[df["id"] == item_id].iloc[0]
+                st.markdown(f"**Selected:** {selected['name']} (Current Qty: {selected['quantity']} {selected['unit']})")
             with col2:
-                st.markdown(f"**Item:** {selected['name']}  \n**Current quantity:** {selected['quantity']} {selected['unit']}")
-                new_qty = st.number_input("New total quantity", min_value=0,
-                                          value=int(selected["quantity"]), step=1)
-            if st.button("Update quantity", use_container_width=True):
-                update_quantity(item_id, new_qty)
-                st.success(f"Updated stock for **{selected['name']}**.")
-                st.rerun()
+                new_qty = st.number_input("New total quantity", min_value=0, value=int(selected["quantity"]), step=1)
+                if st.button("Update Quantity", use_container_width=True):
+                    update_quantity(item_id, new_qty)
+                    st.success(f"Updated **{selected['name']}** quantity to {new_qty} {selected['unit']}.")
+                    st.rerun()
 
-    # ================= REMOVE =================
+    # ================= REMOVE ITEM =================
     elif choice == "Remove Item":
-        page_header("Remove Item", "Permanently remove outdated or damaged items from the inventory.")
+        page_header("Remove Item",
+                    "Permanently delete discontinued or incorrect inventory items.")
         if df.empty:
-            st.info("No items available to delete.")
+            st.info("No items available to remove.")
         else:
             st.dataframe(
-                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
+                df[["id", "quantity", "unit", "name", "category", "price"]],
                 use_container_width=True, hide_index=True,
-                column_config={
-                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                    "description": "Description", "category": "Category",
-                    "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
-                    "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
-                },
             )
-            total_bar(df)
-            item_id = st.selectbox("Select item ID to delete", df["id"].tolist())
-            selected = df[df["id"] == item_id].iloc[0]
-            st.warning(f"You are about to delete **{selected['name']}**. This cannot be undone.")
-            if st.button("Delete item", use_container_width=True):
-                delete_item(item_id)
-                st.success("Item deleted.")
+            item_id_del = st.selectbox("Select item ID to delete", df["id"].tolist(), key="del_select")
+            selected_del = df[df["id"] == item_id_del].iloc[0]
+            st.warning(f"You are about to delete **{selected_del['name']}** (ID: {item_id_del}). This action cannot be undone.")
+            if st.button("Permanently Delete Item", type="primary"):
+                delete_item(item_id_del)
+                st.success(f"Deleted item **{selected_del['name']}** successfully.")
                 st.rerun()
-
 
 if __name__ == "__main__":
     main()
