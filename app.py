@@ -19,8 +19,9 @@ MUTED = "#6b7280"
 LINE = "#e5e7eb"
 PALETTE = ["#FF6A00", "#FF8A1F", "#FFA826", "#FFC53D", "#FFE08A"]
 
-SEARCH_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD1mlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+CiAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIj4KICAgICAgPGRjOmNyZWF0b3I+PHJkZjpTZXE+PHJkZjpsaT5GcmVlaWNvbjwvcmRmLmxpPjwvcmRmOlNlcT48L2RjOmNyZWF0b3I+CiAgICAgIDxkYzpyaWdodHM+PHJkZjpBbHQ+PHJkZjpsaSB4bWw6bGFuZz0ieC1kZWZhdWx0Ij5GcmVlIGZvciBwZXJzb25hbCBhbmQgY29tbWVyY2lhbCB1c2UgLSBmcmVlaWNvbi5jb208L3JkZjpsaT48L3JkZjpBbHQ+PC9kYzpyaWdodHM+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6SXB0YzR4bXBDb3JlPSJodHRwOi8vaXB0Yy5vcmcvc3RkL0lwdGM0eG1wQ29yZS8xLjAveG1sbnMvIj4KICAgICAgPElwdGM0eG1wQ29yZTpDcmVkaXRMaW5lPmZyZWVpY29uLmNvbTwvSXB0YzR4bXBDb3JlOkNyZWRpdExpbmU+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6cGhvdG9zaG9wPSJodHRwOi8vbnMuYWRvYmUuY29tL3Bob3Rvc2hvcC8xLjAvIj4KICAgICAgPHBob3Rvc2hvcDpDcmVkaXQ+ZnJlZWljb24uY29tPC9waG90b3Nob3A6Q3JlZGl0PgogICAgICA8cGhvdG9zaG9wOlNvdXJjZT5mcmVlaWNvbi5jb208L3Bob3Rvc2hvcDpTb3VyY2U+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgo8P3hwYWNrZXQgZW5kPSJ3Ij8+W1BtjgAAC0VJREFUeAHc2wWMpUkRB/C3EDjc9YDD3Q5CsMOdIMEtuLsE1xDcEpzgLsHd/TjcDrfDDjhcLtgBAe7/6339Xc23b2bnzXtvd2cnVa+quvur7q6vpbr6m+NN9o2/g9KMWwefHnxH8AvB7wd/GvxekCz9GeFvE1Q+ZHHYmwY4f5r/pKAO/jz0jcGHBW8cvExQ/jlCLxAkS39o+DcElffck8OfJ7hl2BsGuHJi+8GgDjw6VAdD5gbNPSpP/TD4oeAhwblhTxrg3Gnd+4KfCl4nuCO4HvwnGX8I/iL4x+C/g+sBPddO5mHB9wbVE7I52BMG0MD7pznfDF4vOIb/J+HzwScGdeRsoQcETx80108XeqKg6XCtUOWsCf8LP4brJ+HbwQcEN9W3TRWKsq3CyfKgxeu5oScJVvhTBJ05Z+jlg48LfiT4yyCjhAxANu8/mhTlLhfqTeONlIgDMNZzIr09ePLghrBKA3iDn0ntNwpW+EeERwa9XR3QsYhzw8/yBAMaGY8J/7dgBfV+OglnCK4LqzKASj+XWg8OVvhkhAsGnxb8e3AWnDGJVwjeNHjg8EyiJVAKvJzVepK7eZ1wY48nZq6cIeUaABiN7E40P4+7b+rQ36l1qgU1G+wGfX0b7L/qX7fXfX/fHwQ956QGg0eWbT/wQx4r0C2Q7+O5B9bL105KkYl6V/l17qD8K+qfE5lU6G9B00sO1zXF6cE165KzH2jL3o62Yy+mK4q5N+zWq0g/m760Kj+1+H7+lD+fL2/b/61f9/h8NfX08l95lXvR8GvW30bKffDfv3F71rO3O4e9B27vNl7D3+6N8W6D9O65aI2l31n+/U2t958uF8e4aNfUef+b3tX4N2vN6t+wN59L6lC55/Jz+wTj6+8mBv7c/7P8B/l/v5z7//Wj5B3K/0T+t/3P85fN3P648/2v7f4u+ff8/wH8//v14A3gE/3+l33X+4O//XWv9/gN3f3//3f1e5O//1rP3+/v7+v8H9rNrf6S/vf9/vf2+0X8T177/X7v9v+7fv9/f/33t7P3+/r7vf38n+L/v3b8//8f5v4F6b7/vf3/tf9/vX//v38X/gX///1b//v8P/+1v/9/sWb+9f+H3f79/sf/n///+8P//t6Nf///v////+w87D2r9v78P6v9u4f6f7r/+vf4f8f7v/+Pv9/v9/f8///9f7sPu/3+/+78r8v///v7/7r////8A6f////v7u7u7v////7vv8f/u+u///7///vf7f///vu/f///v////9//////9vv//////v///v///////7v//////v///v//v///7/////fv//v///v////v/////v///////////////////7////////3////3//v///v//////7//v///v////////vvv//v///////3////7//v///v///////vv///////v///////3////7//v///v///////7v//////v////////////////////////////////////////////////7////////v///////v///////7f//////v//////77f//v///v//vv///v//vv///v//////7v//////7v//////7v//////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v///////v-------530x530.png",
-LOGO_SVG = """<svg xmlns="http://v3.org/2000/svg" viewBox="0 0 48 48">
+SEARCH_ICON = "data:image/png;base64,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"
+
+LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#FF9A3D"/><stop offset="1" stop-color="#FF5A00"/></linearGradient></defs>
 <rect width="48" height="48" rx="13" fill="url(#g)"/>
@@ -30,26 +31,29 @@ LOGO_SVG = """<svg xmlns="http://v3.org/2000/svg" viewBox="0 0 48 48">
 </svg>"""
 LOGO_URI = "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).decode()
 
-# --- 2. CUSTOM CSS ---
+# --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
+/* Theme-aware: no hard-coded backgrounds or text colors.
+   Streamlit's own light/dark theme supplies those; we only add
+   translucent greys (work on both) and the orange accent. */
 html, body, [class*="css"], .stApp {{
-    font-family: 'Plus Jakarta Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', sans-serif;
 }}
 .block-container {{ padding-top: 4.5rem; max-width: 1400px; }}
 h1, h2, h3 {{ font-weight: 700; letter-spacing: -0.02em; }}
 
 /* Sidebar brand */
 .brand {{ display:flex; align-items:center; gap:12px; margin: 4px 0 28px; }}
-.brand-logo {{ width:44px; height:44px; display:block; border-radius:12px;
+.brand-logo {{ width:44px; height:44px; flex:none; border-radius:12px;
+    background: url("{LOGO_URI}") center / cover no-repeat;
     box-shadow: 0 4px 12px rgba(255,106,0,.28); }}
 .brand-name {{ font-size:22px; font-weight:700; line-height:1.1; }}
 .brand-sub {{ font-size:12px; opacity:.65; }}
 .menu-label {{ font-size:14px; opacity:.65; margin-bottom:6px; }}
 
-/* ===== SIDEBAR ===== */
+/* ===== SIDEBAR: dark navy panel with animated orange glow ===== */
 section[data-testid="stSidebar"] {{
     background: linear-gradient(180deg, #12141a 0%, #181b24 55%, #26170a 100%) !important;
     border-right: 1px solid rgba(255,255,255,.07);
@@ -109,7 +113,6 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 .side-foot {{
     margin-top: 34px; padding: 14px 16px; border-radius: 12px;
     background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
-    backdrop-filter: blur(6px);
 }}
 .side-foot .live {{ display:flex; align-items:center; gap:8px; font-size:12px; color:#86efac; font-weight:600; }}
 .side-foot .dot {{ width:8px; height:8px; border-radius:50%; background:#22c55e;
@@ -118,41 +121,55 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 .side-foot .foot-title {{ margin-top:10px; font-size:13px; font-weight:600; color:#f1f5f9; }}
 .side-foot .foot-sub {{ font-size:12px; color:#8b94a5; }}
 
-/* ===== MAIN AREA ===== */
+/* ===== MAIN AREA: animated background ===== */
 .stApp {{
     isolation: isolate;
     background-image: radial-gradient(rgba(128,128,128,.16) 1px, transparent 1px);
     background-size: 26px 26px;
 }}
 [data-testid="stAppViewContainer"], [data-testid="stMain"] {{ background: transparent !important; }}
-header[data-testid="stHeader"] {{ background: transparent !important; backdrop-filter: blur(8px); }}
+header[data-testid="stHeader"] {{ background: transparent !important; }}
 
 .stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before {{
     content: ""; position: fixed; border-radius: 50%; z-index: -1; pointer-events: none;
 }}
 .stApp::before {{
     width: 58vw; height: 58vw; top: -20vw; left: -12vw;
-    background: radial-gradient(circle, rgba(255,106,0,.30), rgba(255,106,0,0) 68%);
+    background: radial-gradient(circle, rgba(255,106,0,.22), rgba(255,106,0,0) 68%);
     animation: blobA 20s ease-in-out infinite alternate;
 }}
 .stApp::after {{
     width: 52vw; height: 52vw; right: -14vw; bottom: -22vw;
-    background: radial-gradient(circle, rgba(255,176,59,.28), rgba(255,176,59,0) 68%);
+    background: radial-gradient(circle, rgba(255,176,59,.20), rgba(255,176,59,0) 68%);
     animation: blobB 24s ease-in-out infinite alternate;
 }}
 [data-testid="stAppViewContainer"]::before {{
     width: 38vw; height: 38vw; top: 34vh; left: 46vw;
-    background: radial-gradient(circle, rgba(255,90,60,.17), rgba(255,90,60,0) 68%);
+    background: radial-gradient(circle, rgba(255,90,60,.12), rgba(255,90,60,0) 68%);
     animation: blobC 28s ease-in-out infinite alternate;
 }}
 @keyframes blobA {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(16vw,12vh) scale(1.18); }} }}
 @keyframes blobB {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(-14vw,-10vh) scale(1.22); }} }}
 @keyframes blobC {{ from {{ transform: translate(0,0) scale(.9); }} to {{ transform: translate(-18vw,14vh) scale(1.1); }} }}
 
-.card, .total-bar {{ backdrop-filter: blur(10px); animation: fadeUp .5s ease both;
+/* Cards: glass look, soft entrance, hover lift */
+.card, .total-bar {{ animation: fadeUp .45s ease both;
     transition: transform .2s ease, box-shadow .2s ease; }}
 .card:hover {{ transform: translateY(-4px); box-shadow: 0 14px 30px rgba(255,106,0,.16); }}
 @keyframes fadeUp {{ from {{ opacity:0; transform: translateY(12px); }} to {{ opacity:1; transform: translateY(0); }} }}
+
+.stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
+section[data-testid="stSidebar"]::before, section[data-testid="stSidebar"]::after {{ will-change: transform; }}
+
+/* Panels (bordered containers + forms) and card accent */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    border-radius: 14px; border-color: rgba(128,128,128,.28) !important;
+    background: rgba(128,128,128,.06);
+}}
+.card {{ position: relative; overflow: hidden; }}
+.card::before {{ content:""; position:absolute; top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, #FF6A00, #FFB03B); }}
+.stApp h2 {{ font-size: 30px; }}
 
 @media (prefers-reduced-motion: reduce) {{
     .stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
@@ -160,6 +177,7 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
     .card, .total-bar, .side-foot .dot {{ animation: none !important; }}
 }}
 
+/* Cards */
 .card {{
     background: rgba(128,128,128,.07);
     border: 1px solid rgba(128,128,128,.28);
@@ -181,16 +199,14 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 }}
 .area-row b {{ color:{ORANGE}; font-weight:600; width:44px; display:inline-block; }}
 
-[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"] {{ position: relative; }}
-[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"]::before {{
-    content: ""; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-    width: 18px; height: 18px; opacity: .65; pointer-events: none; z-index: 2;
-    background-color: currentColor;
-    -webkit-mask: url({SEARCH_ICON}) center / contain no-repeat;
-    mask: url({SEARCH_ICON}) center / contain no-repeat;
+/* Search box icon */
+input[placeholder="Search item name..."] {{
+    background-image: url("{SEARCH_ICON}"); background-repeat: no-repeat;
+    background-position: 14px center; background-size: 18px 18px;
+    padding-left: 44px !important;
 }}
-[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) input {{ padding-left: 44px !important; }}
 
+/* Total bar under tables */
 .total-bar {{
     display:flex; justify-content:space-between; align-items:center;
     margin-top:8px; padding:14px 20px; border-radius:12px;
@@ -200,6 +216,7 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 .total-bar .t-sub {{ font-size:12px; opacity:.65; }}
 .total-bar .t-amount {{ font-size:24px; font-weight:700; color:{ORANGE}; }}
 
+/* Buttons in the main area: orange accent, white text */
 [data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
     background:{ORANGE}; color:#fff; border:1px solid {ORANGE};
     border-radius:8px; font-weight:600; padding: 0.5rem 1rem;
@@ -209,6 +226,7 @@ header[data-testid="stHeader"] {{ background: transparent !important; backdrop-f
 }}
 [data-testid="stMain"] .stButton > button p, [data-testid="stMain"] .stFormSubmitButton > button p {{ color:#fff; }}
 
+/* Inputs & tables: keep rounded corners, let theme set colors */
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
@@ -217,6 +235,12 @@ div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border
 
 
 # --- 3. DATABASE (PostgreSQL) ---
+@st.cache_resource(show_spinner=False)
+def _make_engine(db_url):
+    # One shared connection pool for the whole server (no new SSL handshake per click)
+    return create_engine(db_url, pool_size=5, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
+
+
 def get_engine():
     if "DATABASE_URL" not in st.secrets:
         st.error("🚨 **DATABASE_URL is missing!** Please add it in your Streamlit Cloud App Settings -> Secrets.")
@@ -233,10 +257,12 @@ def get_engine():
     elif "sslmode" not in db_url:
         db_url += "&sslmode=require"
 
-    return create_engine(db_url)
+    return _make_engine(db_url)
 
 
+@st.cache_resource(show_spinner=False)
 def init_db():
+    # Runs ONCE per server process instead of on every click
     engine = get_engine()
     with engine.begin() as conn:
         conn.exec_driver_sql("""
@@ -254,6 +280,7 @@ def init_db():
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Pcs.'")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS min_threshold INTEGER DEFAULT 5")
+    return True
 
 
 UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
@@ -268,10 +295,10 @@ def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", descri
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (name, category, quantity, price, min_threshold, unit, description),
         )
-    st.cache_data.clear()
+    st.cache_data.clear()  # refresh data immediately
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_inventory():
     engine = get_engine()
     df = pd.read_sql("SELECT * FROM items ORDER BY id ASC", engine)
@@ -322,6 +349,63 @@ def go_to(page):
     st.session_state["nav"] = page
 
 
+def flash(kind, msg):
+    st.session_state["flash"] = (kind, msg)
+
+
+def show_flash():
+    f = st.session_state.pop("flash", None)
+    if f:
+        getattr(st, f[0])(f[1])
+
+
+def do_update(item_id, qty, name):
+    update_quantity(item_id, qty)
+    flash("success", f"Updated stock for **{name}**.")
+
+
+def do_delete(item_id, name):
+    delete_item(item_id)
+    flash("success", f"Deleted **{name}**.")
+
+
+fragment = getattr(st, "fragment", None) or (lambda f: f)  # older Streamlit: no fragments
+
+
+@fragment
+def inventory_records(df, search_query):
+    """Filters only rerun THIS block, not the whole dashboard."""
+    low_mask = df["quantity"] <= df["min_threshold"]
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
+    f1, f2 = st.columns([2, 1])
+    with f1:
+        name_filter = st.text_input("Filter by name", search_query, placeholder="Item name")
+    with f2:
+        cats = ["All"] + list(df["category"].dropna().unique())
+        cat_filter = st.selectbox("Category", cats)
+
+    view = df
+    if name_filter:
+        view = view[view["name"].str.contains(name_filter, case=False, na=False)]
+    if cat_filter != "All":
+        view = view[view["category"] == cat_filter]
+    view = view.assign(status=low_mask.loc[view.index].map({True: "🔴 Low stock", False: "🟢 In stock"}))
+    view = view[["id", "quantity", "unit", "name", "description", "category",
+                 "price", "amount", "min_threshold", "status"]]
+    st.dataframe(
+        view, use_container_width=True, hide_index=True,
+        column_config={
+            "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
+            "description": "Description", "category": "Category",
+            "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+            "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
+            "min_threshold": "Min", "status": "Status",
+        },
+    )
+    total_bar(view)
+
+
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item"]
 
 
@@ -338,7 +422,7 @@ def main():
     # Sidebar
     st.sidebar.markdown(f"""
         <div class="brand">
-            <img class="brand-logo" src="{LOGO_URI}" alt="DICT NIR logo">
+            <div class="brand-logo"></div>
             <div>
                 <div class="brand-name">DICT NIR</div>
                 <div class="brand-sub">Office Property & Supplies</div>
@@ -363,7 +447,7 @@ def main():
                       on_click=go_to, args=(p,))
         try:
             st.sidebar.button(label, icon=icon, **kwargs)
-        except TypeError:
+        except TypeError:  # older Streamlit without icon support
             st.sidebar.button(label, **kwargs)
 
     st.sidebar.markdown("""
@@ -378,6 +462,7 @@ def main():
 
     # ================= DASHBOARD =================
     if choice == "Dashboard":
+        # Top bar: search + Add New Item
         top_search, top_btn = st.columns([6, 1.2])
         with top_search:
             search_query = st.text_input("Search", placeholder="Search item name...",
@@ -386,7 +471,7 @@ def main():
             try:
                 st.button("Add New Item", icon=":material/add:", use_container_width=True,
                           on_click=go_to, args=("Add Item",))
-            except TypeError:
+            except TypeError:  # older Streamlit without icon support
                 st.button("Add New Item", use_container_width=True, on_click=go_to, args=("Add Item",))
 
         page_header("Key Metrics", "DICT Negros Island Region · Office supply & property inventory")
@@ -414,13 +499,14 @@ def main():
 
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
+        # Chart + category breakdown
         agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
                  .sort_values("value"))
         agg["pct"] = agg["value"] / agg["value"].sum() * 100
         agg["label"] = agg["pct"].round().astype(int).astype(str) + "%"
 
         left, right = st.columns([2, 1])
-        with left:
+        with left.container(border=True):
             st.markdown("<div class='card-label'>Analytics</div>"
                         "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
             base = alt.Chart(agg).encode(
@@ -429,16 +515,16 @@ def main():
             )
             bars = base.mark_bar(color=ORANGE, cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=48)
             labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
-            st.altair_chart((bars + labels).properties(height=340), use_container_width=True)
+            st.altair_chart((bars + labels).properties(height=340, background="transparent"), use_container_width=True)
 
-        with right:
+        with right.container(border=True):
             st.markdown("<div class='section-title'>Stock by Category</div>", unsafe_allow_html=True)
             donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
                 theta="value:Q",
                 color=alt.Color("category:N", legend=None,
                                 scale=alt.Scale(range=PALETTE)),
                 tooltip=["category", alt.Tooltip("value:Q", format=",.2f")],
-            ).properties(height=210)
+            ).properties(height=210, background="transparent")
             st.altair_chart(donut, use_container_width=True)
 
             rows = ""
@@ -448,6 +534,7 @@ def main():
             st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
                         unsafe_allow_html=True)
 
+        # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
         top = df.sort_values("value", ascending=False).head(5).copy()
@@ -462,35 +549,7 @@ def main():
             },
         )
 
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
-        f1, f2 = st.columns([2, 1])
-        with f1:
-            name_filter = st.text_input("Filter by name", search_query, placeholder="Item name")
-        with f2:
-            cats = ["All"] + list(df["category"].dropna().unique())
-            cat_filter = st.selectbox("Category", cats)
-
-        view = df.copy()
-        if name_filter:
-            view = view[view["name"].str.contains(name_filter, case=False, na=False)]
-        if cat_filter != "All":
-            view = view[view["category"] == cat_filter]
-        view["status"] = view.apply(
-            lambda r: "🔴 Low stock" if r["quantity"] <= r["min_threshold"] else "🟢 In stock", axis=1)
-        view = view[["id", "quantity", "unit", "name", "description", "category",
-                     "price", "amount", "min_threshold", "status"]]
-        st.dataframe(
-            view, use_container_width=True, hide_index=True,
-            column_config={
-                "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                "description": "Description", "category": "Category",
-                "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
-                "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
-                "min_threshold": "Min", "status": "Status",
-            },
-        )
-        total_bar(view)
+        inventory_records(df, search_query)
         if len(low_df):
             st.warning("**Attention:** some items are at or below their minimum level. Please arrange restocking.")
 
@@ -503,8 +562,8 @@ def main():
             with col1:
                 name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
                 category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                     "Networking Equipment", "Furniture & Fixtures",
-                                                     "ICT Equipment"])
+                                                      "Networking Equipment", "Furniture & Fixtures",
+                                                      "ICT Equipment"])
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
                 description = st.text_area("Description (optional)", height=100,
                                            placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
@@ -522,10 +581,11 @@ def main():
                              final_unit, description.strip())
                     st.success(f"Saved **{name}** to the inventory.")
 
-    # ================= RESTOCK / ADJUST =================
+    # ================= RESTOCK =================
     elif choice == "Restock / Adjust":
         page_header("Restock / Adjust Stock",
                     "Update quantities when shipments arrive or items are issued to personnel.")
+        show_flash()
         if df.empty:
             st.info("No items available to update.")
         else:
@@ -544,32 +604,37 @@ def main():
             with col1:
                 item_id = st.selectbox("Select item ID", df["id"].tolist())
                 selected = df[df["id"] == item_id].iloc[0]
-                st.markdown(f"**Selected:** {selected['name']} (Current Qty: {selected['quantity']} {selected['unit']})")
             with col2:
-                new_qty = st.number_input("New total quantity", min_value=0, value=int(selected["quantity"]), step=1)
-                if st.button("Update Quantity", use_container_width=True):
-                    update_quantity(item_id, new_qty)
-                    st.success(f"Updated **{selected['name']}** quantity to {new_qty} {selected['unit']}.")
-                    st.rerun()
+                st.markdown(f"**Item:** {selected['name']}  \n**Current quantity:** {selected['quantity']} {selected['unit']}")
+                new_qty = st.number_input("New total quantity", min_value=0,
+                                          value=int(selected["quantity"]), step=1)
+            st.button("Update quantity", use_container_width=True, on_click=do_update,
+                      args=(int(item_id), int(new_qty), selected["name"]))
 
-    # ================= REMOVE ITEM =================
+    # ================= REMOVE =================
     elif choice == "Remove Item":
-        page_header("Remove Item",
-                    "Permanently delete discontinued or incorrect inventory items.")
+        page_header("Remove Item", "Permanently remove outdated or damaged items from the inventory.")
+        show_flash()
         if df.empty:
-            st.info("No items available to remove.")
+            st.info("No items available to delete.")
         else:
             st.dataframe(
-                df[["id", "quantity", "unit", "name", "category", "price"]],
+                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
                 use_container_width=True, hide_index=True,
+                column_config={
+                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
+                    "description": "Description", "category": "Category",
+                    "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+                    "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
+                },
             )
-            item_id_del = st.selectbox("Select item ID to delete", df["id"].tolist(), key="del_select")
-            selected_del = df[df["id"] == item_id_del].iloc[0]
-            st.warning(f"You are about to delete **{selected_del['name']}** (ID: {item_id_del}). This action cannot be undone.")
-            if st.button("Permanently Delete Item", type="primary"):
-                delete_item(item_id_del)
-                st.success(f"Deleted item **{selected_del['name']}** successfully.")
-                st.rerun()
+            total_bar(df)
+            item_id = st.selectbox("Select item ID to delete", df["id"].tolist())
+            selected = df[df["id"] == item_id].iloc[0]
+            st.warning(f"You are about to delete **{selected['name']}**. This cannot be undone.")
+            st.button("Delete item", use_container_width=True, on_click=do_delete,
+                      args=(int(item_id), selected["name"]))
+
 
 if __name__ == "__main__":
     main()
