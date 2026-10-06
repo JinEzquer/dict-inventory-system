@@ -1,8 +1,9 @@
-import streamlit as st
-import pandas as pd
-import altair as alt
-import psycopg2
+import base64
+import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
+import altair as alt
+import pandas as pd
+import streamlit as st
 
 # --- 1. PAGE CONFIG ---
 st.set_page_config(
@@ -18,11 +19,26 @@ MUTED = "#6b7280"
 LINE = "#e5e7eb"
 PALETTE = ["#FF6A00", "#FF8A1F", "#FFA826", "#FFC53D", "#FFE08A"]
 
-# --- 2. CUSTOM CSS ---
+SEARCH_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD1mlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+CiAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIj4KICAgICAgPGRjOmNyZWF0b3I+PHJkZjpTZXE+PHJkZjpsaT5GcmVlaWNvbjwvcmRmOmxpPjwvcmRmOlNlcT48L2RjOmNyZWF0b3I+CiAgICAgIDxkYzpyaWdodHM+PHJkZjpBbHQ+PHJkZjpsaSB4bWw6bGFuZz0ieC1kZWZhdWx0Ij5GcmVlIGZvciBwZXJzb25hbCBhbmQgY29tbWVyY2lhbCB1c2UgLSBmcmVlaWNvbi5jb208L3JkZjpsaT48L3JkZjpBbHQ+PC9kYzpyaWdodHM+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6SXB0YzR4bXBDb3JlPSJodHRwOi8vaXB0Yy5vcmcvc3RkL0lwdGM0eG1wQ29yZS8xLjAveG1sbnMvIj4KICAgICAgPElwdGM0eG1wQ29yZTpDcmVkaXRMaW5lPmZyZWVpY29uLmNvbTwvSXB0YzR4bXBDb3JlOkNyZWRpdExpbmU+CiAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgeG1sbnM6cGhvdG9zaG9wPSJodHRwOi8vbnMuYWRvYmUuY29tL3Bob3Rvc2hvcC8xLjAvIj4KICAgICAgPHBob3Rvc2hvcDpDcmVkaXQ+ZnJlZWljb24uY29tPC9waG90b3Nob3A6Q3JlZGl0Pgog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"
+
+LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#FF9A3D"/><stop offset="1" stop-color="#FF5A00"/></linearGradient></defs>
+<rect width="48" height="48" rx="13" fill="url(#g)"/>
+<path d="M24 11.5 35 17.75v12.5L24 36.5 13 30.25v-12.5z" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+<path d="M13 17.75 24 24l11-6.25" fill="#fff" fill-opacity=".95" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+<path d="M24 24v12.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+</svg>"""
+LOGO_URI = "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).decode()
+
+# --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
+/* Theme-aware: no hard-coded backgrounds or text colors.
+   Streamlit's own light/dark theme supplies those; we only add
+   translucent greys (work on both) and the orange accent. */
 html, body, [class*="css"], .stApp {{
     font-family: 'Plus Jakarta Sans', 'Helvetica Neue', sans-serif;
 }}
@@ -31,31 +47,125 @@ h1, h2, h3 {{ font-weight: 700; letter-spacing: -0.02em; }}
 
 /* Sidebar brand */
 .brand {{ display:flex; align-items:center; gap:12px; margin: 4px 0 28px; }}
-.brand-logo {{
-    width:44px; height:44px; border-radius:12px; background:{ORANGE};
-    display:flex; align-items:center; justify-content:center; font-size:22px;
-}}
+.brand-logo {{ width:44px; height:44px; display:block; border-radius:12px;
+    box-shadow: 0 4px 12px rgba(255,106,0,.28); }}
 .brand-name {{ font-size:22px; font-weight:700; line-height:1.1; }}
 .brand-sub {{ font-size:12px; opacity:.65; }}
 .menu-label {{ font-size:14px; opacity:.65; margin-bottom:6px; }}
 
+/* ===== SIDEBAR: dark navy panel with animated orange glow ===== */
+section[data-testid="stSidebar"] {{
+    background: linear-gradient(180deg, #12141a 0%, #181b24 55%, #26170a 100%) !important;
+    border-right: 1px solid rgba(255,255,255,.07);
+    isolation: isolate;
+}}
+section[data-testid="stSidebar"] > div {{ background: transparent !important; }}
+section[data-testid="stSidebar"]::before {{
+    content: ""; position: absolute; width: 340px; height: 340px; left: -100px; bottom: -130px;
+    border-radius: 50%; z-index: -1; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,106,0,.42), rgba(255,106,0,0) 70%);
+    animation: sideGlow 9s ease-in-out infinite alternate;
+}}
+section[data-testid="stSidebar"]::after {{
+    content: ""; position: absolute; width: 220px; height: 220px; right: -90px; top: 120px;
+    border-radius: 50%; z-index: -1; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,176,59,.20), rgba(255,176,59,0) 70%);
+    animation: sideGlow2 12s ease-in-out infinite alternate;
+}}
+@keyframes sideGlow {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(60px,-70px) scale(1.2); }} }}
+@keyframes sideGlow2 {{ from {{ transform: translate(0,0); }} to {{ transform: translate(-40px,80px); }} }}
+
+section[data-testid="stSidebar"] .brand-name {{ color: #ffffff; letter-spacing: -0.01em; }}
+section[data-testid="stSidebar"] .brand-sub {{ color: #9aa3b2; opacity: 1; }}
+section[data-testid="stSidebar"] .menu-label {{
+    color: #7d8696; opacity: 1; font-size: 11px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; margin: 0 0 10px 4px;
+}}
+.side-divider {{ height: 1px; margin: -10px 0 18px;
+    background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,0)); }}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] svg {{ color: #cbd2de; }}
+
+/* Nav buttons */
 section[data-testid="stSidebar"] .stButton > button {{
-    background: transparent; border: none; box-shadow: none;
+    background: transparent; border: 1px solid transparent; box-shadow: none; color: #cbd2de;
     justify-content: flex-start; text-align: left;
-    padding: 10px 12px; border-radius: 8px; font-weight: 500;
+    padding: 11px 14px; border-radius: 10px; font-weight: 500;
+    transition: background .18s ease, transform .18s ease, color .18s ease;
 }}
 section[data-testid="stSidebar"] .stButton > button > div {{ justify-content: flex-start; width: 100%; }}
-section[data-testid="stSidebar"] .stButton > button p {{ font-size: 15px; text-align: left; }}
+section[data-testid="stSidebar"] .stButton > button p {{ color: inherit; font-size: 15px; text-align: left; }}
+section[data-testid="stSidebar"] .stButton > button span {{ color: inherit; }}
 section[data-testid="stSidebar"] .stButton > button:hover {{
-    background: rgba(128,128,128,.14); border: none; color: inherit;
+    background: rgba(255,255,255,.08); color: #ffffff; border-color: rgba(255,255,255,.07);
+    transform: translateX(4px);
 }}
 section[data-testid="stSidebar"] .stButton > button[kind="primary"],
 section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {{
-    background: rgba(255,106,0,.15); color: {ORANGE}; font-weight: 600;
+    background: linear-gradient(90deg, #FF6A00, #FF8A1F); color: #ffffff; font-weight: 600;
+    box-shadow: 0 8px 20px rgba(255,106,0,.35);
 }}
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] p,
-section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] p {{ color: {ORANGE}; }}
+section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] p {{ color: #ffffff; }}
 
+/* Sidebar footer card */
+.side-foot {{
+    margin-top: 34px; padding: 14px 16px; border-radius: 12px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+    backdrop-filter: blur(6px);
+}}
+.side-foot .live {{ display:flex; align-items:center; gap:8px; font-size:12px; color:#86efac; font-weight:600; }}
+.side-foot .dot {{ width:8px; height:8px; border-radius:50%; background:#22c55e;
+    box-shadow: 0 0 0 0 rgba(34,197,94,.6); animation: pulse 2s infinite; }}
+@keyframes pulse {{ 70% {{ box-shadow: 0 0 0 8px rgba(34,197,94,0); }} 100% {{ box-shadow: 0 0 0 0 rgba(34,197,94,0); }} }}
+.side-foot .foot-title {{ margin-top:10px; font-size:13px; font-weight:600; color:#f1f5f9; }}
+.side-foot .foot-sub {{ font-size:12px; color:#8b94a5; }}
+
+/* ===== MAIN AREA: animated background ===== */
+.stApp {{
+    isolation: isolate;
+    background-image: radial-gradient(rgba(128,128,128,.16) 1px, transparent 1px);
+    background-size: 26px 26px;
+}}
+[data-testid="stAppViewContainer"], [data-testid="stMain"] {{ background: transparent !important; }}
+header[data-testid="stHeader"] {{ background: transparent !important; backdrop-filter: blur(8px); }}
+
+.stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before {{
+    content: ""; position: fixed; border-radius: 50%; z-index: -1; pointer-events: none;
+}}
+.stApp::before {{
+    width: 58vw; height: 58vw; top: -20vw; left: -12vw;
+    background: radial-gradient(circle, rgba(255,106,0,.30), rgba(255,106,0,0) 68%);
+    animation: blobA 20s ease-in-out infinite alternate;
+}}
+.stApp::after {{
+    width: 52vw; height: 52vw; right: -14vw; bottom: -22vw;
+    background: radial-gradient(circle, rgba(255,176,59,.28), rgba(255,176,59,0) 68%);
+    animation: blobB 24s ease-in-out infinite alternate;
+}}
+[data-testid="stAppViewContainer"]::before {{
+    width: 38vw; height: 38vw; top: 34vh; left: 46vw;
+    background: radial-gradient(circle, rgba(255,90,60,.17), rgba(255,90,60,0) 68%);
+    animation: blobC 28s ease-in-out infinite alternate;
+}}
+@keyframes blobA {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(16vw,12vh) scale(1.18); }} }}
+@keyframes blobB {{ from {{ transform: translate(0,0) scale(1); }} to {{ transform: translate(-14vw,-10vh) scale(1.22); }} }}
+@keyframes blobC {{ from {{ transform: translate(0,0) scale(.9); }} to {{ transform: translate(-18vw,14vh) scale(1.1); }} }}
+
+/* Cards: glass look, soft entrance, hover lift */
+.card, .total-bar {{ backdrop-filter: blur(10px); animation: fadeUp .5s ease both;
+    transition: transform .2s ease, box-shadow .2s ease; }}
+.card:hover {{ transform: translateY(-4px); box-shadow: 0 14px 30px rgba(255,106,0,.16); }}
+@keyframes fadeUp {{ from {{ opacity:0; transform: translateY(12px); }} to {{ opacity:1; transform: translateY(0); }} }}
+
+@media (prefers-reduced-motion: reduce) {{
+    .stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
+    section[data-testid="stSidebar"]::before, section[data-testid="stSidebar"]::after,
+    .card, .total-bar, .side-foot .dot {{ animation: none !important; }}
+}}
+
+/* Cards */
 .card {{
     background: rgba(128,128,128,.07);
     border: 1px solid rgba(128,128,128,.28);
@@ -77,6 +187,18 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 }}
 .area-row b {{ color:{ORANGE}; font-weight:600; width:44px; display:inline-block; }}
 
+/* Search box: custom icon image (theme-aware via mask) */
+[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"] {{ position: relative; }}
+[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) div[data-baseweb="input"]::before {{
+    content: ""; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; opacity: .65; pointer-events: none; z-index: 2;
+    background-color: currentColor;
+    -webkit-mask: url({SEARCH_ICON}) center / contain no-repeat;
+    mask: url({SEARCH_ICON}) center / contain no-repeat;
+}}
+[data-testid="stTextInput"]:has(input[placeholder="Search item name..."]) input {{ padding-left: 44px !important; }}
+
+/* Total bar under tables */
 .total-bar {{
     display:flex; justify-content:space-between; align-items:center;
     margin-top:8px; padding:14px 20px; border-radius:12px;
@@ -86,6 +208,7 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 .total-bar .t-sub {{ font-size:12px; opacity:.65; }}
 .total-bar .t-amount {{ font-size:24px; font-weight:700; color:{ORANGE}; }}
 
+/* Buttons in the main area: orange accent, white text */
 [data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
     background:{ORANGE}; color:#fff; border:1px solid {ORANGE};
     border-radius:8px; font-weight:600; padding: 0.5rem 1rem;
@@ -95,6 +218,7 @@ section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-pr
 }}
 [data-testid="stMain"] .stButton > button p, [data-testid="stMain"] .stFormSubmitButton > button p {{ color:#fff; }}
 
+/* Inputs & tables: keep rounded corners, let theme set colors */
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
@@ -102,22 +226,23 @@ div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border
 """, unsafe_allow_html=True)
 
 
+# --- 3. DATABASE (PostgreSQL) ---
 def get_engine():
     if "DATABASE_URL" not in st.secrets:
         st.error("🚨 **DATABASE_URL is missing!** Please add it in your Streamlit Cloud App Settings -> Secrets.")
         st.stop()
-        
+
     db_url = st.secrets["DATABASE_URL"]
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
     elif db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        
+
     if "?" not in db_url:
         db_url += "?sslmode=require"
     elif "sslmode" not in db_url:
         db_url += "&sslmode=require"
-        
+
     return create_engine(db_url)
 
 
@@ -153,8 +278,7 @@ def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", descri
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (name, category, quantity, price, min_threshold, unit, description),
         )
-    # Clear cache so data updates immediately
-    st.cache_data.clear()
+    st.cache_data.clear()  # refresh data immediately
 
 
 @st.cache_data(ttl=60)
@@ -170,20 +294,14 @@ def get_inventory():
 def update_quantity(item_id, new_quantity):
     engine = get_engine()
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            "UPDATE items SET quantity = %s WHERE id = %s",
-            (new_quantity, item_id)
-        )
+        conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (new_quantity, item_id))
     st.cache_data.clear()
 
 
 def delete_item(item_id):
     engine = get_engine()
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            "DELETE FROM items WHERE id = %s",
-            (item_id,)
-        )
+        conn.exec_driver_sql("DELETE FROM items WHERE id = %s", (item_id,))
     st.cache_data.clear()
 
 
@@ -228,14 +346,15 @@ def main():
     init_db()
 
     # Sidebar
-    st.sidebar.markdown("""
+    st.sidebar.markdown(f"""
         <div class="brand">
-            <div class="brand-logo">📦</div>
+            <img class="brand-logo" src="{LOGO_URI}" alt="DICT NIR logo">
             <div>
                 <div class="brand-name">DICT NIR</div>
                 <div class="brand-sub">Office Property & Supplies</div>
             </div>
         </div>
+        <div class="side-divider"></div>
         <div class="menu-label">Main Menu</div>
     """, unsafe_allow_html=True)
 
@@ -254,19 +373,32 @@ def main():
                       on_click=go_to, args=(p,))
         try:
             st.sidebar.button(label, icon=icon, **kwargs)
-        except TypeError: 
+        except TypeError:  # older Streamlit without icon support
             st.sidebar.button(label, **kwargs)
+
+    st.sidebar.markdown("""
+        <div class="side-foot">
+            <div class="live"><span class="dot"></span>System online</div>
+            <div class="foot-title">DICT · Negros Island Region</div>
+            <div class="foot-sub">Inventory Management System</div>
+        </div>
+    """, unsafe_allow_html=True)
 
     df = get_inventory()
 
     # ================= DASHBOARD =================
     if choice == "Dashboard":
+        # Top bar: search + Add New Item
         top_search, top_btn = st.columns([6, 1.2])
         with top_search:
-            search_query = st.text_input("Search", placeholder="🔍  Search item name...",
+            search_query = st.text_input("Search", placeholder="Search item name...",
                                          label_visibility="collapsed")
         with top_btn:
-            st.button("＋ Add New Item", use_container_width=True, on_click=go_to, args=("Add Item",))
+            try:
+                st.button("Add New Item", icon=":material/add:", use_container_width=True,
+                          on_click=go_to, args=("Add Item",))
+            except TypeError:  # older Streamlit without icon support
+                st.button("Add New Item", use_container_width=True, on_click=go_to, args=("Add Item",))
 
         page_header("Key Metrics", "DICT Negros Island Region · Office supply & property inventory")
 
@@ -293,6 +425,7 @@ def main():
 
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
+        # Chart + category breakdown
         agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
                  .sort_values("value"))
         agg["pct"] = agg["value"] / agg["value"].sum() * 100
@@ -327,6 +460,7 @@ def main():
             st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
                         unsafe_allow_html=True)
 
+        # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
         top = df.sort_values("value", ascending=False).head(5).copy()
@@ -341,6 +475,7 @@ def main():
             },
         )
 
+        # Full inventory with filters
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
         f1, f2 = st.columns([2, 1])
@@ -382,8 +517,8 @@ def main():
             with col1:
                 name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
                 category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                   "Networking Equipment", "Furniture & Fixtures",
-                                                   "ICT Equipment"])
+                                                      "Networking Equipment", "Furniture & Fixtures",
+                                                      "ICT Equipment"])
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
                 description = st.text_area("Description (optional)", height=100,
                                            placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
