@@ -375,8 +375,8 @@ def main():
             with col1:
                 name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
                 category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                     "Networking Equipment", "Furniture & Fixtures",
-                                                     "ICT Equipment"])
+                                                   "Networking Equipment", "Furniture & Fixtures",
+                                                   "ICT Equipment"])
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
                 description = st.text_area("Description (optional)", height=100,
                                            placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
