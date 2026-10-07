@@ -109,12 +109,27 @@ THEME_JS = r"""<script>
       var mn = d.querySelector('[data-testid="stMain"]'); if (mn) mn.scrollTo(0, 0);
     }
 
+    function rgbOf(el) { var m = P.getComputedStyle(el).color.match(/[\d.]+/g) || [0, 0, 0]; return [+m[0], +m[1], +m[2]]; }
+    function neutral(c) { return Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 40; }
     function detect() {
-      // Streamlit's TEXT colour: light text = dark theme (we never override the text colour)
-      var el = d.querySelector('[data-testid="stMain"] [data-testid="stMarkdownContainer"] p') ||
-               d.querySelector('.stApp') || d.body;
-      var m = P.getComputedStyle(el).color.match(/[\d.]+/g) || [0, 0, 0];
-      return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255 > 0.5 ? 'dark' : 'light';
+      // Streamlit's body TEXT colour: light text = dark theme.
+      // Coloured text (red tab labels, links...) is ignored; only grey/black/white text counts.
+      var host = d.querySelector('[data-testid="stMain"]') || d.querySelector('.stApp') || d.body;
+      var probe = d.getElementById('__theme_probe');
+      if (!probe || !host.contains(probe)) {
+        probe = d.createElement('div');
+        probe.id = '__theme_probe';
+        probe.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none';
+        host.appendChild(probe);
+      }
+      var els = [probe], ps = host.querySelectorAll('p');
+      for (var i = 0; i < ps.length && i < 30; i++) els.push(ps[i]);
+      els.push(d.querySelector('.stApp') || d.body);
+      for (var j = 0; j < els.length; j++) {
+        var c = rgbOf(els[j]);
+        if (neutral(c)) return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 > 0.5 ? 'dark' : 'light';
+      }
+      return d.documentElement.getAttribute('data-app-theme') || 'light';
     }
     function apply() {
       var t = detect();
