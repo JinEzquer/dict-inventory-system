@@ -1,4 +1,11 @@
 import base64
+import hashlib
+import hmac
+import html
+import os
+import re
+import time
+from datetime import datetime, timedelta, timezone
 import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
 import altair as alt
@@ -332,6 +339,27 @@ def init_db():
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Pcs.'")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS min_threshold INTEGER DEFAULT 5")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                failed_attempts INTEGER DEFAULT 0,
+                locked_until TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id SERIAL PRIMARY KEY,
+                ts TIMESTAMPTZ DEFAULT NOW(),
+                username TEXT,
+                action TEXT,
+                item_id INTEGER,
+                item_name TEXT,
+                details TEXT
+            )
+        """)
     return True
 
 
@@ -339,15 +367,27 @@ UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
          "Sets", "Pairs", "Cartridges", "Units"]
 
 
+def _log(conn, action, item_id=None, item_name=None, details="", username=None):
+    conn.exec_driver_sql(
+        "INSERT INTO activity_log (username, action, item_id, item_name, details) VALUES (%s, %s, %s, %s, %s)",
+        (username or st.session_state.get("user", "system"), action, item_id, item_name, details),
+    )
+
+
+def log_activity(action, **kw):
+    with get_engine().begin() as conn:
+        _log(conn, action, **kw)
+
+
 def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", description=""):
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.exec_driver_sql(
+    with get_engine().begin() as conn:
+        new_id = conn.exec_driver_sql(
             "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (name, category, quantity, price, min_threshold, unit, description),
-        )
-    st.cache_data.clear()  # refresh data immediately
+        ).scalar()
+        _log(conn, "ADD_ITEM", new_id, name, f"{quantity} {unit} @ ₱{price:,.2f} · {category}")
+    st.cache_data.clear()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -361,17 +401,191 @@ def get_inventory():
 
 
 def update_quantity(item_id, new_quantity):
-    engine = get_engine()
-    with engine.begin() as conn:
+    with get_engine().begin() as conn:
+        row = conn.exec_driver_sql("SELECT name, quantity, unit FROM items WHERE id = %s", (item_id,)).fetchone()
         conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (new_quantity, item_id))
+        if row:
+            _log(conn, "UPDATE_STOCK", item_id, row[0], f"{row[1]} → {new_quantity} {row[2]}")
     st.cache_data.clear()
 
 
 def delete_item(item_id):
-    engine = get_engine()
-    with engine.begin() as conn:
+    with get_engine().begin() as conn:
+        row = conn.exec_driver_sql("SELECT name, quantity, unit FROM items WHERE id = %s", (item_id,)).fetchone()
         conn.exec_driver_sql("DELETE FROM items WHERE id = %s", (item_id,))
+        if row:
+            _log(conn, "DELETE_ITEM", item_id, row[0], f"Removed {row[1]} {row[2]} from inventory")
     st.cache_data.clear()
+
+
+# --- 3b. SECURITY: accounts, login, lockout, activity log ---
+SESSION_MINUTES = 30      # auto sign-out after this much inactivity
+MAX_ATTEMPTS = 5          # wrong passwords before the account is locked
+LOCK_MINUTES = 5
+USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,30}$")
+
+ACTION_LABELS = {
+    "LOGIN": "Signed in", "LOGOUT": "Signed out", "SESSION_EXPIRED": "Session expired",
+    "LOGIN_FAILED": "Failed sign-in", "LOGIN_BLOCKED": "Blocked (locked account)",
+    "ADD_ITEM": "Added item", "UPDATE_STOCK": "Changed stock", "DELETE_ITEM": "Deleted item",
+    "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
+}
+
+
+def hash_password(password, iterations=310_000):
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${dk.hex()}"
+
+
+def verify_password(password, stored):
+    try:
+        _, iters, salt, digest = stored.split("$")
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iters))
+        return hmac.compare_digest(dk.hex(), digest)
+    except Exception:
+        return False
+
+
+@st.cache_resource(show_spinner=False)
+def dummy_hash():
+    return hash_password("not-a-real-password")
+
+
+def count_users():
+    with get_engine().begin() as conn:
+        return conn.exec_driver_sql("SELECT COUNT(*) FROM users").scalar()
+
+
+def get_user(username):
+    with get_engine().begin() as conn:
+        r = conn.exec_driver_sql(
+            "SELECT username, full_name, password_hash, failed_attempts, locked_until FROM users WHERE username = %s",
+            (username,)).fetchone()
+    return dict(r._mapping) if r else None
+
+
+def set_attempts(username, attempts, locked_until):
+    with get_engine().begin() as conn:
+        conn.exec_driver_sql("UPDATE users SET failed_attempts = %s, locked_until = %s WHERE username = %s",
+                             (attempts, locked_until, username))
+
+
+def create_user(username, full_name, password):
+    with get_engine().begin() as conn:
+        conn.exec_driver_sql("INSERT INTO users (username, full_name, password_hash) VALUES (%s, %s, %s)",
+                             (username, full_name, hash_password(password)))
+
+
+def list_users():
+    return pd.read_sql("SELECT username, full_name, created_at, locked_until FROM users ORDER BY created_at", get_engine())
+
+
+def get_activity(limit=500):
+    df = pd.read_sql(
+        f"SELECT ts, username, action, item_name, details FROM activity_log ORDER BY id DESC LIMIT {int(limit)}",
+        get_engine())
+    if not df.empty:
+        df["ts"] = (pd.to_datetime(df["ts"], utc=True).dt.tz_convert("Asia/Manila")
+                    .dt.strftime("%b %d, %Y  %I:%M %p"))
+        df["action"] = df["action"].map(lambda a: ACTION_LABELS.get(a, a))
+    return df
+
+
+def attempt_login(username, password):
+    username = username.strip().lower()
+    user = get_user(username) if USERNAME_RE.match(username) else None
+    now = datetime.now(timezone.utc)
+    attempts = user["failed_attempts"] if user else 0
+
+    if user and user["locked_until"]:
+        if user["locked_until"] > now:
+            mins = max(1, -(-int((user["locked_until"] - now).total_seconds()) // 60))
+            log_activity("LOGIN_BLOCKED", username=username, details="Account is temporarily locked")
+            return False, f"Too many failed attempts. Try again in {mins} minute(s)."
+        attempts = 0  # lock expired
+
+    ok = verify_password(password, user["password_hash"] if user else dummy_hash()) and user is not None
+    if ok:
+        set_attempts(username, 0, None)
+        st.session_state.update(user=username, full_name=user["full_name"], last_active=time.time())
+        log_activity("LOGIN", username=username)
+        return True, ""
+
+    if user:
+        attempts += 1
+        locked = now + timedelta(minutes=LOCK_MINUTES) if attempts >= MAX_ATTEMPTS else None
+        set_attempts(username, attempts, locked)
+    log_activity("LOGIN_FAILED", username=username[:40] or "?", details="Wrong username or password")
+    return False, "Invalid username or password."
+
+
+def logout(reason="LOGOUT"):
+    user = st.session_state.get("user")
+    if user:
+        log_activity(reason, username=user)
+    for k in ("user", "full_name", "last_active", "nav"):
+        st.session_state.pop(k, None)
+
+
+def password_problem(pw, confirm):
+    if len(pw) < 8:
+        return "Password must be at least 8 characters."
+    if pw != confirm:
+        return "Passwords do not match."
+    return None
+
+
+def login_view():
+    first_run = count_users() == 0
+    _, mid, _ = st.columns([1, 1.1, 1])
+    with mid:
+        st.markdown(f"""
+            <div class="brand" style="justify-content:center; margin-top:6vh">
+                <div class="brand-logo"></div>
+                <div><div class="brand-name">DICT NIR</div>
+                <div class="brand-sub">Office Property & Supplies</div></div>
+            </div>""", unsafe_allow_html=True)
+        msg = st.session_state.pop("login_msg", None)
+        if msg:
+            getattr(st, msg[0])(msg[1])
+
+        with st.container(border=True):
+            if first_run:
+                st.markdown("<div class='section-title'>Create the first account</div>"
+                            "<div class='section-sub'>No accounts exist yet. This first account will be used to sign in "
+                            "and add others.</div>", unsafe_allow_html=True)
+                with st.form("setup_form"):
+                    full_name = st.text_input("Full name")
+                    username = st.text_input("Username", placeholder="letters, numbers, . _ -")
+                    pw = st.text_input("Password (min. 8 characters)", type="password")
+                    pw2 = st.text_input("Confirm password", type="password")
+                    code = st.text_input("Setup code", type="password") if "SETUP_CODE" in st.secrets else None
+                    if st.form_submit_button("Create account", use_container_width=True):
+                        u = username.strip().lower()
+                        if "SETUP_CODE" in st.secrets and not hmac.compare_digest(code or "", str(st.secrets["SETUP_CODE"])):
+                            st.error("Incorrect setup code.")
+                        elif not full_name.strip() or not USERNAME_RE.match(u):
+                            st.error("Enter your name and a username of 3-30 letters, numbers, . _ -")
+                        elif password_problem(pw, pw2):
+                            st.error(password_problem(pw, pw2))
+                        else:
+                            create_user(u, full_name.strip(), pw)
+                            log_activity("CREATE_USER", username=u, details="First account created")
+                            st.session_state["login_msg"] = ("success", "Account created. Please sign in.")
+                            st.rerun()
+            else:
+                st.markdown("<div class='section-title'>Sign in</div>"
+                            "<div class='section-sub'>Authorized personnel only.</div>", unsafe_allow_html=True)
+                with st.form("login_form"):
+                    username = st.text_input("Username")
+                    password = st.text_input("Password", type="password")
+                    if st.form_submit_button("Sign in", use_container_width=True):
+                        ok, err = attempt_login(username, password)
+                        if ok:
+                            st.rerun()
+                        else:
+                            st.error(err)
 
 
 # --- 4. UI HELPERS ---
@@ -458,7 +672,7 @@ def inventory_records(df, search_query):
     total_bar(view)
 
 
-PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item"]
+PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
 
 
 def page_header(title, subtitle=None):
@@ -470,6 +684,16 @@ def page_header(title, subtitle=None):
 # --- 5. MAIN APP ---
 def main():
     init_db()
+
+    # ---- security gate: nothing below runs unless signed in ----
+    if "user" not in st.session_state:
+        login_view()
+        return
+    if time.time() - st.session_state.get("last_active", time.time()) > SESSION_MINUTES * 60:
+        logout("SESSION_EXPIRED")
+        st.session_state["login_msg"] = ("warning", "Your session expired. Please sign in again.")
+        st.rerun()
+    st.session_state["last_active"] = time.time()
 
     # Sidebar
     st.sidebar.markdown(f"""
@@ -491,6 +715,7 @@ def main():
         "Add Item": ("Add Item", ":material/add_box:"),
         "Restock / Adjust": ("Restock / Adjust", ":material/inventory_2:"),
         "Remove Item": ("Remove Item", ":material/delete:"),
+        "Security": ("Security", ":material/shield:"),
     }
     choice = st.session_state["nav"]
     for p, (label, icon) in nav_items.items():
@@ -502,13 +727,18 @@ def main():
         except TypeError:  # older Streamlit without icon support
             st.sidebar.button(label, **kwargs)
 
-    st.sidebar.markdown("""
+    st.sidebar.markdown(f"""
         <div class="side-foot">
             <div class="live"><span class="dot"></span>System online</div>
-            <div class="foot-title">DICT · Negros Island Region</div>
-            <div class="foot-sub">Inventory Management System</div>
+            <div class="foot-title">{html.escape(st.session_state.get("full_name", ""))}</div>
+            <div class="foot-sub">Signed in · DICT Negros Island Region</div>
         </div>
     """, unsafe_allow_html=True)
+    try:
+        st.sidebar.button("Sign out", icon=":material/logout:", key="signout", use_container_width=True,
+                          on_click=logout)
+    except TypeError:
+        st.sidebar.button("Sign out", key="signout", use_container_width=True, on_click=logout)
 
     df = get_inventory()
 
@@ -686,6 +916,86 @@ def main():
             st.warning(f"You are about to delete **{selected['name']}**. This cannot be undone.")
             st.button("Delete item", use_container_width=True, on_click=do_delete,
                       args=(int(item_id), selected["name"]))
+
+    # ================= SECURITY =================
+    elif choice == "Security":
+        page_header("Security", "Accounts and a record of who did what in this system.")
+        show_flash()
+        tab_log, tab_users, tab_pw = st.tabs(["Activity Log", "User Accounts", "My Password"])
+
+        with tab_log:
+            act = get_activity()
+            if act.empty:
+                st.info("No activity recorded yet.")
+            else:
+                c1, c2 = st.columns(2)
+                who = c1.selectbox("User", ["All"] + sorted(act["username"].dropna().unique().tolist()))
+                what = c2.selectbox("Action", ["All"] + sorted(act["action"].dropna().unique().tolist()))
+                if who != "All":
+                    act = act[act["username"] == who]
+                if what != "All":
+                    act = act[act["action"] == what]
+                st.dataframe(act, use_container_width=True, hide_index=True, column_config={
+                    "ts": "When (PH time)", "username": "User", "action": "Action",
+                    "item_name": "Item", "details": "Details"})
+                st.caption("Showing the latest 500 events.")
+
+        with tab_users:
+            users = list_users()
+            users["status"] = users["locked_until"].map(
+                lambda t: "Locked" if pd.notna(t) and t > pd.Timestamp.now(tz="UTC") else "Active")
+            users["created_at"] = pd.to_datetime(users["created_at"], utc=True).dt.tz_convert(
+                "Asia/Manila").dt.strftime("%b %d, %Y")
+            st.dataframe(users[["username", "full_name", "status", "created_at"]], use_container_width=True,
+                         hide_index=True, column_config={"username": "Username", "full_name": "Full name",
+                                                         "status": "Status", "created_at": "Created"})
+            with st.expander("Add a new account"):
+                with st.form("new_user_form", clear_on_submit=True):
+                    n_name = st.text_input("Full name")
+                    n_user = st.text_input("Username", placeholder="letters, numbers, . _ -")
+                    n_pw = st.text_input("Password (min. 8 characters)", type="password")
+                    n_pw2 = st.text_input("Confirm password", type="password")
+                    if st.form_submit_button("Create account", use_container_width=True):
+                        u = n_user.strip().lower()
+                        if not n_name.strip() or not USERNAME_RE.match(u):
+                            st.error("Enter a name and a username of 3-30 letters, numbers, . _ -")
+                        elif password_problem(n_pw, n_pw2):
+                            st.error(password_problem(n_pw, n_pw2))
+                        elif get_user(u):
+                            st.error("That username already exists.")
+                        else:
+                            create_user(u, n_name.strip(), n_pw)
+                            log_activity("CREATE_USER", details=f"Created account '{u}'")
+                            flash("success", f"Account **{u}** created.")
+                            st.rerun()
+            others = [u for u in users["username"] if u != st.session_state["user"]]
+            if others:
+                with st.expander("Remove an account"):
+                    target = st.selectbox("Account to remove", others)
+                    if st.button("Remove account", key="rm_user"):
+                        with get_engine().begin() as conn:
+                            conn.exec_driver_sql("DELETE FROM users WHERE username = %s", (target,))
+                            _log(conn, "DELETE_USER", details=f"Removed account '{target}'")
+                        flash("success", f"Account **{target}** removed.")
+                        st.rerun()
+
+        with tab_pw:
+            with st.form("pw_form", clear_on_submit=True):
+                cur = st.text_input("Current password", type="password")
+                new = st.text_input("New password (min. 8 characters)", type="password")
+                new2 = st.text_input("Confirm new password", type="password")
+                if st.form_submit_button("Change password", use_container_width=True):
+                    me = get_user(st.session_state["user"])
+                    if not verify_password(cur, me["password_hash"]):
+                        st.error("Current password is incorrect.")
+                    elif password_problem(new, new2):
+                        st.error(password_problem(new, new2))
+                    else:
+                        with get_engine().begin() as conn:
+                            conn.exec_driver_sql("UPDATE users SET password_hash = %s WHERE username = %s",
+                                                 (hash_password(new), me["username"]))
+                            _log(conn, "CHANGE_PASSWORD")
+                        st.success("Password changed.")
 
 
 if __name__ == "__main__":
