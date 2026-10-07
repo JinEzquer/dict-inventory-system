@@ -64,6 +64,8 @@ div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
 
 div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
 
+.login-bg { --acc: 59,130,246; }
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) { background: rgba(255,255,255,.74); box-shadow: 0 24px 60px rgba(37,99,235,.16); }
 .brand-logo { background-image: url("__LOGO_BLUE__"); box-shadow: 0 4px 12px rgba(59,130,246,.30); }
 section[data-testid="stSidebar"] { background: linear-gradient(180deg, #10141c 0%, #141b29 55%, #0f2038 100%) !important; }
 section[data-testid="stSidebar"]::before { background: radial-gradient(circle, rgba(59,130,246,.42), rgba(59,130,246,0) 70%); }
@@ -91,10 +93,11 @@ THEME_JS = """<script>
   try {
     var P = window.parent, d = P.document;
     function apply() {
-      var app = d.querySelector('.stApp') || d.body;
-      var m = P.getComputedStyle(app).backgroundColor.match(/[\\d.]+/g) || [255, 255, 255];
+      var el = d.querySelector('[data-testid="stMain"] [data-testid="stMarkdownContainer"] p') ||
+               d.querySelector('.stApp') || d.body;
+      var m = P.getComputedStyle(el).color.match(/[\\d.]+/g) || [0, 0, 0];
       var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
-      var t = lum > 0.5 ? 'light' : 'dark';
+      var t = lum > 0.5 ? 'dark' : 'light';   // light text means the dark theme is active
       if (d.documentElement.getAttribute('data-app-theme') !== t) d.documentElement.setAttribute('data-app-theme', t);
     }
     apply();
@@ -248,7 +251,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
 @media (prefers-reduced-motion: reduce) {{
     .stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
     section[data-testid="stSidebar"]::before, section[data-testid="stSidebar"]::after,
-    .card, .total-bar, .side-foot .dot {{ animation: none !important; }}
+    .card, .total-bar, .side-foot .dot, .login-bg .ring, .login-bg .orb {{ animation: none !important; }}
 }}
 
 /* Cards */
@@ -304,6 +307,34 @@ input[placeholder="Search item name..."] {{
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
+/* ===== LOGIN PAGE: minimal moving background ===== */
+.login-bg {{ position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; --acc: 255,106,0; }}
+.login-bg .ring {{ position: absolute; left: 50%; top: 47%; border-radius: 50%;
+    border: 1px solid rgba(var(--acc), .22); transform: translate(-50%, -50%);
+    animation: breathe 10s ease-in-out infinite; will-change: transform; }}
+.login-bg .r1 {{ width: 520px; height: 520px; }}
+.login-bg .r2 {{ width: 800px; height: 800px; border-color: rgba(var(--acc), .14); animation-delay: -3.3s; }}
+.login-bg .r3 {{ width: 1100px; height: 1100px; border-color: rgba(var(--acc), .09); animation-delay: -6.6s; }}
+.login-bg .orb {{ position: absolute; border-radius: 50%; background: rgba(var(--acc), .55);
+    box-shadow: 0 0 18px rgba(var(--acc), .55); will-change: transform; }}
+.login-bg .o1 {{ width: 9px; height: 9px; left: 21%; top: 32%; animation: drift 12s ease-in-out infinite alternate; }}
+.login-bg .o2 {{ width: 6px; height: 6px; left: 79%; top: 64%; animation: drift 15s ease-in-out infinite alternate-reverse; }}
+.login-bg .o3 {{ width: 7px; height: 7px; left: 70%; top: 24%; animation: drift 13s ease-in-out infinite alternate; }}
+.login-bg .o4 {{ width: 5px; height: 5px; left: 28%; top: 72%; animation: drift 17s ease-in-out infinite alternate-reverse; }}
+@keyframes breathe {{
+    0%, 100% {{ transform: translate(-50%, -50%) scale(1); opacity: .95; }}
+    50% {{ transform: translate(-50%, -50%) scale(1.07); opacity: .45; }}
+}}
+@keyframes drift {{ from {{ transform: translate(0, 0); }} to {{ transform: translate(26px, -48px); }} }}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) {{
+    background: rgba(128,128,128,.10); backdrop-filter: blur(14px); border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.28); padding: 14px 16px 6px;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-title,
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub {{ text-align: center; }}
+.login-marker {{ height: 0; }}
+
 /* hide the 0-height theme-detector iframe */
 .stElementContainer:has(iframe[height="0"]), div[data-testid="stElementContainer"]:has(iframe[height="0"]) {{
     position: absolute; height: 0; width: 0; overflow: hidden; margin: 0; padding: 0;
@@ -567,6 +598,13 @@ def password_problem(pw, confirm):
     return None
 
 
+def _form(key):
+    try:
+        return st.form(key, border=False)  # no second border inside the card
+    except TypeError:
+        return st.form(key)
+
+
 def login_view():
     try:
         first_run = count_users() == 0
@@ -583,15 +621,19 @@ def login_view():
                 <div class="brand-sub">Office Property & Supplies</div></div>
             </div>""", unsafe_allow_html=True)
         msg = st.session_state.pop("login_msg", None)
+        st.markdown("""<div class="login-bg"><div class="ring r1"></div><div class="ring r2"></div>
+            <div class="ring r3"></div><div class="orb o1"></div><div class="orb o2"></div>
+            <div class="orb o3"></div><div class="orb o4"></div></div>""", unsafe_allow_html=True)
         if msg:
             getattr(st, msg[0])(msg[1])
 
         with st.container(border=True):
+            st.markdown('<div class="login-marker"></div>', unsafe_allow_html=True)
             if first_run:
                 st.markdown("<div class='section-title'>Create the first account</div>"
                             "<div class='section-sub'>No accounts exist yet. This first account will be used to sign in "
                             "and add others.</div>", unsafe_allow_html=True)
-                with st.form("setup_form"):
+                with _form("setup_form"):
                     full_name = st.text_input("Full name")
                     username = st.text_input("Username", placeholder="letters, numbers, . _ -")
                     pw = st.text_input("Password (min. 8 characters)", type="password")
@@ -613,7 +655,7 @@ def login_view():
             else:
                 st.markdown("<div class='section-title'>Sign in</div>"
                             "<div class='section-sub'>Authorized personnel only.</div>", unsafe_allow_html=True)
-                with st.form("login_form"):
+                with _form("login_form"):
                     username = st.text_input("Username")
                     password = st.text_input("Password", type="password")
                     if st.form_submit_button("Sign in", use_container_width=True):
