@@ -1,0 +1,10 @@
+# Put this file at  .streamlit/config.toml  in your GitHub repo (next to app.py)
+
+[theme.light]
+primaryColor = "#3B82F6"
+backgroundColor = "#d6e3f2"
+secondaryBackgroundColor = "#c5d6ea"
+textColor = "#1e293b"
+
+[theme.dark]
+primaryColor = "#FF6A00"
