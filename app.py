@@ -67,6 +67,8 @@ div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
 [data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover { background: #2563EB; border-color: #2563EB; }
 
 div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
+button[data-baseweb="tab"][aria-selected="true"] { color: #2563EB !important; }
+div[data-baseweb="tab-highlight"] { background-color: #3B82F6 !important; }
 button[data-testid="stBaseButton-segmented_controlActive"] { background: rgba(59,130,246,.16) !important; border-color: #3B82F6 !important; color: #2563EB !important; }
 [data-testid="stMain"] .stDownloadButton > button { color: #2563EB; border-color: #3B82F6; }
 [data-testid="stMain"] .stDownloadButton > button:hover { background: #3B82F6; color: #fff; }
@@ -113,20 +115,25 @@ THEME_JS = r"""<script>
       if (d.documentElement.getAttribute('data-app-theme') !== t) d.documentElement.setAttribute('data-app-theme', t);
     }
 
-    // 1) react in the very next frame whenever Streamlit changes classes (= theme switch)
+    // 1) react in the next frame when the app root changes (= theme switch). Cheap: root element only.
     var pending = false;
     function schedule() { if (pending) return; pending = true; P.requestAnimationFrame(function () { pending = false; apply(); }); }
     var mo = new P.MutationObserver(schedule);
-    mo.observe(d.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+    mo.observe(d.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+    var app = d.querySelector('.stApp');
+    if (app) mo.observe(app, { attributes: true, attributeFilter: ['class', 'style'] });
 
-    // 2) after any click (the theme menu), re-check quickly for ~1 second
-    function burst() { var n = 0, h = P.setInterval(function () { apply(); if (++n > 30) P.clearInterval(h); }, 30); }
+    // 2) clicks INSIDE the settings menu: re-check for ~0.8 s (ignored everywhere else)
+    function burst(e) {
+      if (!e.target || !e.target.closest || !e.target.closest('[data-baseweb="popover"],[role="dialog"],[role="menu"]')) return;
+      var n = 0, h = P.setInterval(function () { apply(); if (++n > 20) P.clearInterval(h); }, 40);
+    }
     d.addEventListener('click', burst, true);
 
     // 3) system light/dark change + slow safety net
     var mq = P.matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener('change', burst);
-    var timer = P.setInterval(apply, 400);
+    var timer = P.setInterval(apply, 1000);
 
     P.__themeCleanup = function () {
       mo.disconnect(); d.removeEventListener('click', burst, true);
@@ -260,7 +267,7 @@ header[data-testid="stHeader"] {{ background: transparent !important; }}
 @keyframes blobC {{ from {{ transform: translate(0,0) scale(.9); }} to {{ transform: translate(-18vw,14vh) scale(1.1); }} }}
 
 /* Cards: glass look, soft entrance, hover lift */
-.card, .total-bar {{ animation: fadeUp .45s ease both;
+.card, .total-bar {{
     transition: transform .2s ease, box-shadow .2s ease; }}
 .card:hover {{ transform: translateY(-4px); box-shadow: 0 14px 30px rgba(255,106,0,.16); }}
 @keyframes fadeUp {{ from {{ opacity:0; transform: translateY(12px); }} to {{ opacity:1; transform: translateY(0); }} }}
@@ -368,6 +375,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub 
 /* Charts: hide the hover toolbar (its "Show data" button can leave a chart stuck on the data table) */
 [data-testid="stElementContainer"]:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"],
 .stElementContainer:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"] {{ display: none !important; }}
+
+/* Tabs (Chart / Data) */
+button[data-baseweb="tab"][aria-selected="true"] {{ color: #FF6A00 !important; }}
+div[data-baseweb="tab-highlight"] {{ background-color: #FF6A00 !important; }}
 
 /* Chart/Data toggle + download buttons */
 button[data-testid="stBaseButton-segmented_controlActive"] {{
@@ -1001,15 +1012,6 @@ def inventory_records(df, search_query):
                 total=float(view["amount"].sum()), base="inventory-report", key="exp_inv")
 
 
-def view_toggle(key):
-    try:
-        mode = st.segmented_control("View", ["Chart", "Data"], default="Chart", key=key,
-                                    label_visibility="collapsed")
-    except AttributeError:
-        mode = st.radio("View", ["Chart", "Data"], horizontal=True, key=key, label_visibility="collapsed")
-    return mode or "Chart"
-
-
 def data_view(agg, key):
     t = agg.sort_values("value", ascending=False)[["category", "value", "pct"]]
     st.dataframe(t, hide_index=True, use_container_width=True, height=300, column_config={
@@ -1017,48 +1019,43 @@ def data_view(agg, key):
         "value": st.column_config.NumberColumn("Value", format="₱%.2f"),
         "pct": st.column_config.NumberColumn("Share", format="%.1f%%")})
     st.download_button("Download CSV", t.to_csv(index=False).encode(), file_name="stock-by-category.csv",
-                       mime="text/csv", key=f"csv_{key}")
+                       mime="text/csv", key=f"csv_{key}", on_click="ignore")
 
 
-@fragment
 def bar_panel(agg):
-    head, tog = st.columns([3, 2])
-    with head:
-        st.markdown("<div class='card-label'>Analytics</div>"
-                    "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
-    with tog:
-        mode = view_toggle("mode_bar")
-    if mode == "Data":
+    st.markdown("<div class='card-label'>Analytics</div>"
+                "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
+    tab_chart, tab_data = st.tabs(["Chart", "Data"])  # tabs switch in the browser: instant
+    with tab_chart:
+        base = alt.Chart(agg).encode(
+            x=alt.X("category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=120)),
+            y=alt.Y("value:Q", title=None, axis=alt.Axis(format="~s", gridDash=[4, 4])),
+        )
+        bars = base.mark_bar(color=ORANGE, cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=48)
+        labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
+        st.altair_chart((bars + labels).properties(height=320, background="transparent"), use_container_width=True)
+    with tab_data:
         data_view(agg, "bar")
-        return
-    base = alt.Chart(agg).encode(
-        x=alt.X("category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=120)),
-        y=alt.Y("value:Q", title=None, axis=alt.Axis(format="~s", gridDash=[4, 4])),
-    )
-    bars = base.mark_bar(color=ORANGE, cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=48)
-    labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
-    st.altair_chart((bars + labels).properties(height=340, background="transparent"), use_container_width=True)
 
 
-@fragment
 def donut_panel(agg):
     st.markdown("<div class='section-title'>Stock by Category</div>", unsafe_allow_html=True)
-    mode = view_toggle("mode_donut")
-    if mode == "Data":
+    tab_chart, tab_data = st.tabs(["Chart", "Data"])
+    with tab_chart:
+        donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
+            theta="value:Q",
+            color=alt.Color("category:N", legend=None, scale=alt.Scale(range=PALETTE)),
+            tooltip=["category", alt.Tooltip("value:Q", format=",.2f")],
+        ).properties(height=200, background="transparent")
+        st.altair_chart(donut, use_container_width=True)
+        rows = ""
+        for _, r in agg.sort_values("value", ascending=False).head(4).iterrows():
+            rows += (f"<div class='area-row'><span><b>{r['pct']:.0f}%</b>{r['category']}</span>"
+                     f"<span>₱{r['value']:,.0f}</span></div>")
+        st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
+                    unsafe_allow_html=True)
+    with tab_data:
         data_view(agg, "donut")
-        return
-    donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
-        theta="value:Q",
-        color=alt.Color("category:N", legend=None, scale=alt.Scale(range=PALETTE)),
-        tooltip=["category", alt.Tooltip("value:Q", format=",.2f")],
-    ).properties(height=210, background="transparent")
-    st.altair_chart(donut, use_container_width=True)
-    rows = ""
-    for _, r in agg.sort_values("value", ascending=False).head(4).iterrows():
-        rows += (f"<div class='area-row'><span><b>{r['pct']:.0f}%</b>{r['category']}</span>"
-                 f"<span>₱{r['value']:,.0f}</span></div>")
-    st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
-                unsafe_allow_html=True)
 
 
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
