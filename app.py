@@ -48,16 +48,18 @@ LOGO_URI_BLUE = "data:image/svg+xml;base64," + base64.b64encode(
 
 
 _LIGHT_RAW = """
-.stApp { background-color: #eaf4ff; }
+.stApp { background-color: #d6e3f2; }
 .stApp::before { background: radial-gradient(circle, rgba(59,130,246,.26), rgba(59,130,246,0) 68%); }
 .stApp::after { background: radial-gradient(circle, rgba(56,189,248,.28), rgba(56,189,248,0) 68%); }
 [data-testid="stAppViewContainer"]::before { background: radial-gradient(circle, rgba(125,211,252,.32), rgba(125,211,252,0) 68%); }
 
-.card { background: rgba(255,255,255,.75); border-color: rgba(59,130,246,.22); }
+.card { background: rgba(240,246,252,.62); border-color: rgba(59,130,246,.24); }
 .card::before { background: linear-gradient(90deg, #3B82F6, #7DD3FC); }
 .card:hover { box-shadow: 0 14px 30px rgba(59,130,246,.18); }
-div[data-testid="stVerticalBlockBorderWrapper"] { background: rgba(255,255,255,.65); border-color: rgba(59,130,246,.22) !important; }
-div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
+div[data-testid="stVerticalBlockBorderWrapper"] { background: rgba(240,246,252,.5); border-color: rgba(59,130,246,.24) !important; }
+div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.24); filter: brightness(.95); }
+div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] { background-color: #e1eaf6 !important; }
+input[placeholder="Search item name..."] { background-color: transparent !important; }
 .badge-orange { background: rgba(59,130,246,.14); color: #2563EB; }
 .area-row b { color: #2563EB; }
 .total-bar { background: rgba(59,130,246,.10); border-color: rgba(59,130,246,.32); }
@@ -67,14 +69,14 @@ div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
 [data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover { background: #2563EB; border-color: #2563EB; }
 
 div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
-button[data-baseweb="tab"][aria-selected="true"] { color: #2563EB !important; }
-div[data-baseweb="tab-highlight"] { background-color: #3B82F6 !important; }
+button[role="tab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] { color: #2563EB !important; }
+[data-testid="stTabs"] [data-baseweb="tab-highlight"], div[data-baseweb="tab-highlight"] { background-color: #3B82F6 !important; }
 button[data-testid="stBaseButton-segmented_controlActive"] { background: rgba(59,130,246,.16) !important; border-color: #3B82F6 !important; color: #2563EB !important; }
 [data-testid="stMain"] .stDownloadButton > button { color: #2563EB; border-color: #3B82F6; }
 [data-testid="stMain"] .stDownloadButton > button:hover { background: #3B82F6; color: #fff; }
 
 .login-bg { --acc: 59,130,246; }
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) { background: rgba(255,255,255,.74); box-shadow: 0 24px 60px rgba(37,99,235,.16); }
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) { background: rgba(240,246,252,.72); box-shadow: 0 24px 60px rgba(37,99,235,.16); }
 .brand-logo { background-image: url("__LOGO_BLUE__"); box-shadow: 0 4px 12px rgba(59,130,246,.30); }
 section[data-testid="stSidebar"] { background: linear-gradient(180deg, #10141c 0%, #141b29 55%, #0f2038 100%) !important; }
 section[data-testid="stSidebar"]::before { background: radial-gradient(circle, rgba(59,130,246,.42), rgba(59,130,246,0) 70%); }
@@ -377,8 +379,8 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub 
 .stElementContainer:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"] {{ display: none !important; }}
 
 /* Tabs (Chart / Data) */
-button[data-baseweb="tab"][aria-selected="true"] {{ color: #FF6A00 !important; }}
-div[data-baseweb="tab-highlight"] {{ background-color: #FF6A00 !important; }}
+button[role="tab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] {{ color: #FF6A00 !important; }}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"], div[data-baseweb="tab-highlight"] {{ background-color: #FF6A00 !important; }}
 
 /* Chart/Data toggle + download buttons */
 button[data-testid="stBaseButton-segmented_controlActive"] {{
