@@ -88,21 +88,44 @@ LIGHT_CSS = (_scope(_LIGHT_RAW, 'html[data-app-theme="light"]')
              + "@media (prefers-color-scheme: light) {"
              + _scope(_LIGHT_RAW, "html:not([data-app-theme])") + "}")
 
-THEME_JS = """<script>
+THEME_JS = r"""<script>
 (function () {
   try {
     var P = window.parent, d = P.document;
-    function apply() {
+    if (P.__themeCleanup) P.__themeCleanup();          // remove the previous instance
+
+    function detect() {
+      // Streamlit's TEXT colour: light text = dark theme (we never override the text colour)
       var el = d.querySelector('[data-testid="stMain"] [data-testid="stMarkdownContainer"] p') ||
                d.querySelector('.stApp') || d.body;
-      var m = P.getComputedStyle(el).color.match(/[\\d.]+/g) || [0, 0, 0];
-      var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
-      var t = lum > 0.5 ? 'dark' : 'light';   // light text means the dark theme is active
+      var m = P.getComputedStyle(el).color.match(/[\d.]+/g) || [0, 0, 0];
+      return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255 > 0.5 ? 'dark' : 'light';
+    }
+    function apply() {
+      var t = detect();
       if (d.documentElement.getAttribute('data-app-theme') !== t) d.documentElement.setAttribute('data-app-theme', t);
     }
+
+    // 1) react in the very next frame whenever Streamlit changes classes (= theme switch)
+    var pending = false;
+    function schedule() { if (pending) return; pending = true; P.requestAnimationFrame(function () { pending = false; apply(); }); }
+    var mo = new P.MutationObserver(schedule);
+    mo.observe(d.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+
+    // 2) after any click (the theme menu), re-check quickly for ~1 second
+    function burst() { var n = 0, h = P.setInterval(function () { apply(); if (++n > 30) P.clearInterval(h); }, 30); }
+    d.addEventListener('click', burst, true);
+
+    // 3) system light/dark change + slow safety net
+    var mq = P.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', burst);
+    var timer = P.setInterval(apply, 400);
+
+    P.__themeCleanup = function () {
+      mo.disconnect(); d.removeEventListener('click', burst, true);
+      mq.removeEventListener('change', burst); P.clearInterval(timer);
+    };
     apply();
-    P.clearInterval(P.__themeTimer);
-    P.__themeTimer = P.setInterval(apply, 600);
   } catch (e) {}
 })();
 </script>"""
