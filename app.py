@@ -43,20 +43,67 @@ LOGO_URI_BLUE = "data:image/svg+xml;base64," + base64.b64encode(
     LOGO_SVG.replace("#FF9A3D", "#7DB8FF").replace("#FF5A00", "#2F7BF5").encode()).decode()
 
 
-def _theme_type():
-    try:
-        return st.context.theme.type  # "light" / "dark" (newer Streamlit)
-    except Exception:
-        return None
+_LIGHT_RAW = """
+.stApp { background-color: #eaf4ff; }
+.stApp::before { background: radial-gradient(circle, rgba(59,130,246,.26), rgba(59,130,246,0) 68%); }
+.stApp::after { background: radial-gradient(circle, rgba(56,189,248,.28), rgba(56,189,248,0) 68%); }
+[data-testid="stAppViewContainer"]::before { background: radial-gradient(circle, rgba(125,211,252,.32), rgba(125,211,252,0) 68%); }
+
+.card { background: rgba(255,255,255,.75); border-color: rgba(59,130,246,.22); }
+.card::before { background: linear-gradient(90deg, #3B82F6, #7DD3FC); }
+.card:hover { box-shadow: 0 14px 30px rgba(59,130,246,.18); }
+div[data-testid="stVerticalBlockBorderWrapper"] { background: rgba(255,255,255,.65); border-color: rgba(59,130,246,.22) !important; }
+div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
+.badge-orange { background: rgba(59,130,246,.14); color: #2563EB; }
+.area-row b { color: #2563EB; }
+.total-bar { background: rgba(59,130,246,.10); border-color: rgba(59,130,246,.32); }
+.total-bar .t-amount { color: #2563EB; }
+
+[data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button { background: #3B82F6; border-color: #3B82F6; }
+[data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover { background: #2563EB; border-color: #2563EB; }
+
+div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
+
+.brand-logo { background-image: url("__LOGO_BLUE__"); box-shadow: 0 4px 12px rgba(59,130,246,.30); }
+section[data-testid="stSidebar"] { background: linear-gradient(180deg, #10141c 0%, #141b29 55%, #0f2038 100%) !important; }
+section[data-testid="stSidebar"]::before { background: radial-gradient(circle, rgba(59,130,246,.42), rgba(59,130,246,0) 70%); }
+section[data-testid="stSidebar"]::after { background: radial-gradient(circle, rgba(125,211,252,.22), rgba(125,211,252,0) 70%); }
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { background: linear-gradient(90deg, #3B82F6, #60A5FA); box-shadow: 0 8px 20px rgba(59,130,246,.35); }
+""".replace("__LOGO_BLUE__", LOGO_URI_BLUE)
 
 
-_t = _theme_type()
-if _t == "light":
-    LIGHT_OPEN, LIGHT_CLOSE = "", ""                                    # always apply
-elif _t == "dark":
-    LIGHT_OPEN, LIGHT_CLOSE = "@media not all {", "}"                   # never apply
-else:
-    LIGHT_OPEN, LIGHT_CLOSE = "@media (prefers-color-scheme: light) {", "}"  # follow system
+def _scope(css, prefix):
+    """Prefix every selector so the rules only apply under `prefix`."""
+    return re.sub(r"([^{}]+)\{([^{}]*)\}",
+                  lambda m: ",".join(prefix + " " + x.strip() for x in m.group(1).split(",")) + "{" + m.group(2) + "}",
+                  css)
+
+
+# Light mode = whatever theme Streamlit is ACTUALLY showing (detected by the script below),
+# with the browser's light setting as a fallback until detection runs.
+LIGHT_CSS = (_scope(_LIGHT_RAW, 'html[data-app-theme="light"]')
+             + "@media (prefers-color-scheme: light) {"
+             + _scope(_LIGHT_RAW, "html:not([data-app-theme])") + "}")
+
+THEME_JS = """<script>
+(function () {
+  try {
+    var P = window.parent, d = P.document;
+    function apply() {
+      var app = d.querySelector('.stApp') || d.body;
+      var m = P.getComputedStyle(app).backgroundColor.match(/[\\d.]+/g) || [255, 255, 255];
+      var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
+      var t = lum > 0.5 ? 'light' : 'dark';
+      if (d.documentElement.getAttribute('data-app-theme') !== t) d.documentElement.setAttribute('data-app-theme', t);
+    }
+    apply();
+    P.clearInterval(P.__themeTimer);
+    P.__themeTimer = P.setInterval(apply, 600);
+  } catch (e) {}
+})();
+</script>"""
+
 
 # --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
 st.markdown(f"""
@@ -257,41 +304,21 @@ input[placeholder="Search item name..."] {{
 div[data-baseweb="input"], div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
 div[data-testid="stDataFrame"] {{ border:1px solid rgba(128,128,128,.28); border-radius:12px; overflow:hidden; }}
 .stAlert {{ border-radius: 10px; }}
-/* ===== LIGHT MODE ONLY: swap orange for soft light blue (dark mode untouched) ===== */
-{LIGHT_OPEN}
-.stApp::before {{ background: radial-gradient(circle, rgba(96,165,250,.22), rgba(96,165,250,0) 68%); }}
-.stApp::after {{ background: radial-gradient(circle, rgba(125,211,252,.24), rgba(125,211,252,0) 68%); }}
-[data-testid="stAppViewContainer"]::before {{ background: radial-gradient(circle, rgba(147,197,253,.20), rgba(147,197,253,0) 68%); }}
+/* hide the 0-height theme-detector iframe */
+.stElementContainer:has(iframe[height="0"]), div[data-testid="stElementContainer"]:has(iframe[height="0"]) {{
+    position: absolute; height: 0; width: 0; overflow: hidden; margin: 0; padding: 0;
+}}
 
-.card::before {{ background: linear-gradient(90deg, #3B82F6, #7DD3FC); }}
-.card:hover {{ box-shadow: 0 14px 30px rgba(59,130,246,.16); }}
-.badge-orange {{ background: rgba(59,130,246,.14); color: #2563EB; }}
-.area-row b {{ color: #2563EB; }}
-.total-bar {{ background: rgba(59,130,246,.10); border-color: rgba(59,130,246,.32); }}
-.total-bar .t-amount {{ color: #2563EB; }}
-
-[data-testid="stMain"] .stButton > button, [data-testid="stMain"] .stFormSubmitButton > button {{
-    background: #3B82F6; border-color: #3B82F6; }}
-[data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover {{
-    background: #2563EB; border-color: #2563EB; }}
-
-/* Charts: recolor orange -> sky blue */
-div[data-testid="stVegaLiteChart"] {{ filter: hue-rotate(180deg); }}
-
-/* Sidebar + logo */
-.brand-logo {{ background-image: url("{LOGO_URI_BLUE}"); box-shadow: 0 4px 12px rgba(59,130,246,.30); }}
-section[data-testid="stSidebar"] {{
-    background: linear-gradient(180deg, #10141c 0%, #141b29 55%, #0f2038 100%) !important; }}
-section[data-testid="stSidebar"]::before {{
-    background: radial-gradient(circle, rgba(59,130,246,.42), rgba(59,130,246,0) 70%); }}
-section[data-testid="stSidebar"]::after {{
-    background: radial-gradient(circle, rgba(125,211,252,.22), rgba(125,211,252,0) 70%); }}
-section[data-testid="stSidebar"] .stButton > button[kind="primary"],
-section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] {{
-    background: linear-gradient(90deg, #3B82F6, #60A5FA); box-shadow: 0 8px 20px rgba(59,130,246,.35); }}
-{LIGHT_CLOSE}
+/* ===== LIGHT MODE ONLY: soft sky-blue theme (dark mode untouched) ===== */
+{LIGHT_CSS}
 </style>
 """, unsafe_allow_html=True)
+
+try:
+    import streamlit.components.v1 as _components
+    _components.html(THEME_JS, height=0)
+except Exception:
+    pass  # falls back to the browser's light/dark setting
 
 
 # --- 3. DATABASE (PostgreSQL) ---
