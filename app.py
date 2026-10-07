@@ -2,10 +2,12 @@ import base64
 import hashlib
 import importlib.util
 import io
+import json
 import hmac
 import html
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -102,6 +104,10 @@ THEME_JS = r"""<script>
   try {
     var P = window.parent, d = P.document;
     if (P.__themeCleanup) P.__themeCleanup();          // remove the previous instance
+    if (P.location.hash) {                              // old "#key-metrics" links made the page auto-scroll
+      P.history.replaceState(null, '', P.location.pathname + P.location.search);
+      var mn = d.querySelector('[data-testid="stMain"]'); if (mn) mn.scrollTo(0, 0);
+    }
 
     function detect() {
       // Streamlit's TEXT colour: light text = dark theme (we never override the text colour)
@@ -283,7 +289,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
 .card {{ position: relative; overflow: hidden; }}
 .card::before {{ content:""; position:absolute; top:0; left:0; right:0; height:3px;
     background: linear-gradient(90deg, #FF6A00, #FFB03B); }}
-.stApp h2 {{ font-size: 30px; }}
+.page-title {{ font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 2px; }}
 
 @media (prefers-reduced-motion: reduce) {{
     .stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
@@ -433,7 +439,7 @@ def get_engine():
     return _make_engine(db_url)
 
 
-SCHEMA_VERSION = 3  # bump this whenever tables/columns change so setup re-runs
+SCHEMA_VERSION = 4  # bump this whenever tables/columns change so setup re-runs
 
 
 @st.cache_resource(show_spinner=False)
@@ -475,6 +481,14 @@ def init_db(schema_version=None):
                 item_id INTEGER,
                 item_name TEXT,
                 details TEXT
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                expires_at TIMESTAMPTZ NOT NULL
             )
         """)
     return True
@@ -536,7 +550,8 @@ def delete_item(item_id):
 
 
 # --- 3b. SECURITY: accounts, login, lockout, activity log ---
-SESSION_MINUTES = 30      # auto sign-out after this much inactivity
+REMEMBER_DAYS = 7         # a device stays signed in this long
+COOKIE_NAME = "dictnir_session"
 MAX_ATTEMPTS = 5          # wrong passwords before the account is locked
 LOCK_MINUTES = 5
 USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,30}$")
@@ -609,6 +624,66 @@ def get_activity(limit=500):
     return df
 
 
+def _th(token):
+    return hashlib.sha256(token.encode()).hexdigest()  # only the hash is stored in the database
+
+
+def create_session(username):
+    token = secrets.token_urlsafe(32)
+    with get_engine().begin() as conn:
+        conn.exec_driver_sql("DELETE FROM sessions WHERE expires_at < NOW()")
+        conn.exec_driver_sql(
+            "INSERT INTO sessions (token_hash, username, expires_at) VALUES (%s, %s, NOW() + make_interval(days => %s))",
+            (_th(token), username, REMEMBER_DAYS))
+    return token
+
+
+def lookup_session(token):
+    with get_engine().begin() as conn:
+        r = conn.exec_driver_sql(
+            "SELECT u.username, u.full_name FROM sessions s JOIN users u ON u.username = s.username "
+            "WHERE s.token_hash = %s AND s.expires_at > NOW()", (_th(token),)).fetchone()
+        if r:  # keep an actively used device signed in (write at most about once a day)
+            conn.exec_driver_sql(
+                "UPDATE sessions SET expires_at = NOW() + make_interval(days => %s) "
+                "WHERE token_hash = %s AND expires_at < NOW() + make_interval(days => %s)",
+                (REMEMBER_DAYS, _th(token), REMEMBER_DAYS - 1))
+    return dict(r._mapping) if r else None
+
+
+def delete_session(token):
+    with get_engine().begin() as conn:
+        conn.exec_driver_sql("DELETE FROM sessions WHERE token_hash = %s", (_th(token),))
+
+
+def _cookie_token():
+    try:
+        return st.context.cookies.get(COOKIE_NAME)
+    except Exception:
+        return None
+
+
+def restore_session():
+    """Page reload on a device that is already signed in: no password needed again."""
+    token = _cookie_token()
+    row = lookup_session(token) if token else None
+    if not row:
+        return False
+    st.session_state.update(user=row["username"], full_name=row["full_name"], session_token=token)
+    return True
+
+
+def _cookie_js(action, token=None):
+    secs = REMEMBER_DAYS * 86400 if action == "set" else 0
+    js = ("<script>(function(){try{var P=window.parent;var s=P.location.protocol==='https:'?'; Secure':'';"
+          "P.document.cookie=" + json.dumps(COOKIE_NAME) + "+'='+" + json.dumps(token or "") +
+          "+'; max-age=" + str(secs) + "; path=/; SameSite=Lax'+s;}catch(e){}})();</script>")
+    try:
+        _components.html(js, height=0)
+    except Exception:
+        pass
+
+
 def attempt_login(username, password):
     username = username.strip().lower()
     user = get_user(username) if USERNAME_RE.match(username) else None
@@ -625,7 +700,9 @@ def attempt_login(username, password):
     ok = verify_password(password, user["password_hash"] if user else dummy_hash()) and user is not None
     if ok:
         set_attempts(username, 0, None)
-        st.session_state.update(user=username, full_name=user["full_name"], last_active=time.time())
+        token = create_session(username)
+        st.session_state.update(user=username, full_name=user["full_name"], session_token=token,
+                                cookie_cmd=("set", token))
         log_activity("LOGIN", username=username)
         return True, ""
 
@@ -639,10 +716,14 @@ def attempt_login(username, password):
 
 def logout(reason="LOGOUT"):
     user = st.session_state.get("user")
+    token = st.session_state.pop("session_token", None) or _cookie_token()
+    if token:
+        delete_session(token)
     if user:
         log_activity(reason, username=user)
-    for k in ("user", "full_name", "last_active", "nav"):
+    for k in ("user", "full_name", "nav"):
         st.session_state.pop(k, None)
+    st.session_state["cookie_cmd"] = ("clear", None)
 
 
 def password_problem(pw, confirm):
@@ -1062,7 +1143,7 @@ PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
 
 
 def page_header(title, subtitle=None):
-    st.markdown(f"<h2 style='margin-bottom:0'>{title}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<div class='page-title'>{title}</div>", unsafe_allow_html=True)
     if subtitle:
         st.markdown(f"<div class='section-sub'>{subtitle}</div>", unsafe_allow_html=True)
 
@@ -1071,15 +1152,14 @@ def page_header(title, subtitle=None):
 def main():
     init_db(SCHEMA_VERSION)
 
+    cmd = st.session_state.pop("cookie_cmd", None)   # set / clear this device's sign-in cookie
+    if cmd:
+        _cookie_js(*cmd)
+
     # ---- security gate: nothing below runs unless signed in ----
-    if "user" not in st.session_state:
+    if "user" not in st.session_state and not restore_session():
         login_view()
         return
-    if time.time() - st.session_state.get("last_active", time.time()) > SESSION_MINUTES * 60:
-        logout("SESSION_EXPIRED")
-        st.session_state["login_msg"] = ("warning", "Your session expired. Please sign in again.")
-        st.rerun()
-    st.session_state["last_active"] = time.time()
 
     # Sidebar
     st.sidebar.markdown(f"""
@@ -1342,6 +1422,7 @@ def main():
                     if st.button("Remove account", key="rm_user"):
                         with get_engine().begin() as conn:
                             conn.exec_driver_sql("DELETE FROM users WHERE username = %s", (target,))
+                            conn.exec_driver_sql("DELETE FROM sessions WHERE username = %s", (target,))
                             _log(conn, "DELETE_USER", details=f"Removed account '{target}'")
                         flash("success", f"Account **{target}** removed.")
                         st.rerun()
@@ -1362,7 +1443,11 @@ def main():
                             conn.exec_driver_sql("UPDATE users SET password_hash = %s WHERE username = %s",
                                                  (hash_password(new), me["username"]))
                             _log(conn, "CHANGE_PASSWORD")
-                        st.success("Password changed.")
+                            conn.exec_driver_sql("DELETE FROM sessions WHERE username = %s", (me["username"],))
+                        tok = create_session(me["username"])  # other devices must sign in again
+                        st.session_state.update(session_token=tok, cookie_cmd=("set", tok))
+                        flash("success", "Password changed. Other devices were signed out.")
+                        st.rerun()
 
 
 if __name__ == "__main__":
