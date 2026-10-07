@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
+from sqlalchemy.exc import ProgrammingError
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -319,8 +320,11 @@ def get_engine():
     return _make_engine(db_url)
 
 
+SCHEMA_VERSION = 3  # bump this whenever tables/columns change so setup re-runs
+
+
 @st.cache_resource(show_spinner=False)
-def init_db():
+def init_db(schema_version=None):
     # Runs ONCE per server process instead of on every click
     engine = get_engine()
     with engine.begin() as conn:
@@ -537,7 +541,12 @@ def password_problem(pw, confirm):
 
 
 def login_view():
-    first_run = count_users() == 0
+    try:
+        first_run = count_users() == 0
+    except ProgrammingError:  # tables missing (setup was cached before they existed) -> create them now
+        init_db.clear()
+        init_db(SCHEMA_VERSION)
+        first_run = count_users() == 0
     _, mid, _ = st.columns([1, 1.1, 1])
     with mid:
         st.markdown(f"""
@@ -683,7 +692,7 @@ def page_header(title, subtitle=None):
 
 # --- 5. MAIN APP ---
 def main():
-    init_db()
+    init_db(SCHEMA_VERSION)
 
     # ---- security gate: nothing below runs unless signed in ----
     if "user" not in st.session_state:
