@@ -335,6 +335,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-titl
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub {{ text-align: center; }}
 .login-marker {{ height: 0; }}
 
+/* Charts: hide the hover toolbar (its "Show data" button can leave a chart stuck on the data table) */
+[data-testid="stElementContainer"]:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"],
+.stElementContainer:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"] {{ display: none !important; }}
+
 /* hide the 0-height theme-detector iframe */
 .stElementContainer:has(iframe[height="0"]), div[data-testid="stElementContainer"]:has(iframe[height="0"]) {{
     position: absolute; height: 0; width: 0; overflow: hidden; margin: 0; padding: 0;
