@@ -1,5 +1,8 @@
-streamlit
+streamlit>=1.50
 pandas
 altair
-psycopg2-binary
 sqlalchemy
+psycopg2-binary
+openpyxl
+reportlab
+python-docx
