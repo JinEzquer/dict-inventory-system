@@ -1,11 +1,15 @@
 import base64
 import hashlib
+import importlib.util
+import io
 import hmac
 import html
 import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from functools import partial
+from xml.sax.saxutils import escape
 import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
@@ -63,6 +67,9 @@ div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
 [data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover { background: #2563EB; border-color: #2563EB; }
 
 div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
+button[data-testid="stBaseButton-segmented_controlActive"] { background: rgba(59,130,246,.16) !important; border-color: #3B82F6 !important; color: #2563EB !important; }
+[data-testid="stMain"] .stDownloadButton > button { color: #2563EB; border-color: #3B82F6; }
+[data-testid="stMain"] .stDownloadButton > button:hover { background: #3B82F6; color: #fff; }
 
 .login-bg { --acc: 59,130,246; }
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) { background: rgba(255,255,255,.74); box-shadow: 0 24px 60px rgba(37,99,235,.16); }
@@ -361,6 +368,16 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub 
 /* Charts: hide the hover toolbar (its "Show data" button can leave a chart stuck on the data table) */
 [data-testid="stElementContainer"]:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"],
 .stElementContainer:has([data-testid="stVegaLiteChart"]) [data-testid="stElementToolbar"] {{ display: none !important; }}
+
+/* Chart/Data toggle + download buttons */
+button[data-testid="stBaseButton-segmented_controlActive"] {{
+    background: rgba(255,106,0,.18) !important; border-color: #FF6A00 !important; color: #FF6A00 !important; }}
+[data-testid="stMain"] .stDownloadButton > button {{
+    background: transparent; color: #FF6A00; border: 1px solid #FF6A00; border-radius: 8px; font-weight: 600; }}
+[data-testid="stMain"] .stDownloadButton > button:hover {{ background: #FF6A00; color: #fff; }}
+[data-testid="stMain"] .stDownloadButton > button:hover p {{ color: #fff; }}
+[data-testid="stMain"] .stDownloadButton > button p {{ color: inherit; }}
+[data-testid="stPopover"] > div > button {{ border-radius: 8px; font-weight: 600; }}
 
 /* hide the 0-height theme-detector iframe */
 .stElementContainer:has(iframe[height="0"]), div[data-testid="stElementContainer"]:has(iframe[height="0"]) {{
@@ -693,6 +710,205 @@ def login_view():
                             st.error(err)
 
 
+# --- 3c. EXPORTS: Excel / PDF / Word ---
+PH_TZ = timezone(timedelta(hours=8))
+
+
+def _clean(v):
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return ""
+    return v.item() if hasattr(v, "item") else v
+
+
+def _rows(df, money_cols):
+    out = []
+    for rec in df.itertuples(index=False):
+        row = []
+        for col, v in zip(df.columns, rec):
+            v = _clean(v)
+            row.append(f"{v:,.2f}" if (col in money_cols and v != "") else str(v))
+        out.append(row)
+    return out
+
+
+def build_excel(title, subtitle, df, money_cols, total=None):
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    n = len(df.columns)
+    ws["A1"] = title
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = subtitle
+    ws["A2"].font = Font(italic=True, color="666666")
+    for j, c in enumerate(df.columns, 1):
+        cell = ws.cell(row=4, column=j, value=c)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="FF6A00")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for i, rec in enumerate(df.itertuples(index=False), 5):
+        for j, (c, v) in enumerate(zip(df.columns, rec), 1):
+            cell = ws.cell(row=i, column=j, value=_clean(v))
+            if c in money_cols:
+                cell.number_format = '"₱"#,##0.00'
+    if total is not None:
+        r = 4 + len(df) + 2
+        ws.cell(row=r, column=max(n - 1, 1), value="TOTAL BALANCE").font = Font(bold=True)
+        t = ws.cell(row=r, column=n, value=float(total))
+        t.font = Font(bold=True)
+        t.number_format = '"₱"#,##0.00'
+    for j, c in enumerate(df.columns, 1):
+        longest = max([len(str(c))] + [len(str(_clean(v))) for v in df.iloc[:, j - 1]])
+        ws.column_dimensions[get_column_letter(j)].width = min(max(longest + 3, 8), 50)
+    ws.freeze_panes = "A5"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_word(title, subtitle, df, money_cols, total=None):
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Inches, Pt, RGBColor
+
+    def shade(cell, fill):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), fill)
+        tcPr.append(shd)
+
+    doc = Document()
+    sec = doc.sections[0]
+    sec.orientation = WD_ORIENT.LANDSCAPE
+    sec.page_width, sec.page_height = sec.page_height, sec.page_width
+    for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
+        setattr(sec, side, Inches(0.6))
+    doc.add_heading(title, level=1)
+    sub = doc.add_paragraph()
+    sub.add_run(subtitle).italic = True
+
+    table = doc.add_table(rows=1, cols=len(df.columns))
+    table.style = "Table Grid"
+    for j, c in enumerate(df.columns):
+        cell = table.rows[0].cells[j]
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(str(c))
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        shade(cell, "FF6A00")
+    for row in _rows(df, money_cols):
+        cells = table.add_row().cells
+        for j, (c, v) in enumerate(zip(df.columns, row)):
+            cells[j].text = ""
+            par = cells[j].paragraphs[0]
+            par.add_run(v).font.size = Pt(8.5)
+            if c in money_cols:
+                par.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    if total is not None:
+        par = doc.add_paragraph()
+        par.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = par.add_run(f"TOTAL BALANCE: ₱{total:,.2f}")
+        run.bold = True
+        run.font.size = Pt(12)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_pdf(title, subtitle, df, money_cols, total=None):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    def t(x):  # built-in PDF fonts have no peso sign
+        return escape(str(x).replace("₱", "PHP "))
+
+    ss = getSampleStyleSheet()
+    cell = ParagraphStyle("c", parent=ss["Normal"], fontSize=7.5, leading=9)
+    cell_r = ParagraphStyle("cr", parent=cell, alignment=2)
+    head = ParagraphStyle("h", parent=cell, textColor=colors.white, fontName="Helvetica-Bold")
+    page_w = landscape(A4)[0]
+
+    rows = _rows(df, money_cols)
+    data = [[Paragraph(t(c), head) for c in df.columns]]
+    for row in rows:
+        data.append([Paragraph(t(v), cell_r if c in money_cols else cell) for c, v in zip(df.columns, row)])
+    weights = [min(max([len(str(c))] + [len(r[j]) for r in rows]), 40) + 4 for j, c in enumerate(df.columns)]
+    widths = [(page_w - 56) * w / sum(weights) for w in weights]
+
+    tbl = Table(data, colWidths=widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FF6A00")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF4EB")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9D9D9")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story = [Paragraph(f"<b>{t(title)}</b>", ParagraphStyle("t", parent=ss["Title"], alignment=0, fontSize=18)),
+             Paragraph(t(subtitle), ss["Normal"]), Spacer(1, 10), tbl]
+    if total is not None:
+        story += [Spacer(1, 8), Paragraph(f"<b>TOTAL BALANCE: PHP {total:,.2f}</b>",
+                                          ParagraphStyle("tt", parent=ss["Normal"], alignment=2, fontSize=11))]
+
+    def footer(canvas, d):
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawString(28, 18, "DICT NIR - Inventory System")
+        canvas.drawRightString(page_w - 28, 18, f"Page {d.page}")
+
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=28, rightMargin=28, topMargin=30,
+                      bottomMargin=34, title=title).build(story, onFirstPage=footer, onLaterPages=footer)
+    return buf.getvalue()
+
+
+def report_subtitle(extra=""):
+    now = datetime.now(PH_TZ).strftime("%B %d, %Y %I:%M %p")
+    who = st.session_state.get("full_name", "")
+    return f"DICT Negros Island Region · Generated {now} (PH time) by {who}" + (f" · {extra}" if extra else "")
+
+
+def export_menu(title, subtitle, df, money_cols, total=None, base="report", key="exp"):
+    """Popover with Excel / PDF / Word downloads. Files are built only when you click a button."""
+    stamp = datetime.now(PH_TZ).strftime("%Y%m%d-%H%M")
+    try:
+        pop = st.popover("Export report", icon=":material/download:")
+    except TypeError:
+        pop = st.popover("Export report")
+    with pop:
+        st.caption("Exports exactly what is shown in the table above.")
+        formats = [
+            ("Excel (.xlsx)", build_excel, "openpyxl", "xlsx",
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("PDF (.pdf)", build_pdf, "reportlab", "pdf", "application/pdf"),
+            ("Word (.docx)", build_word, "docx", "docx",
+             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ]
+        for label, builder, module, ext, mime in formats:
+            if importlib.util.find_spec(module) is None:
+                pkg = {"docx": "python-docx"}.get(module, module)
+                st.caption(f"{label}: add `{pkg}` to requirements.txt")
+                continue
+            make = partial(builder, title, subtitle, df, money_cols, total)
+            fname, k = f"{base}-{stamp}.{ext}", f"{key}_{ext}"
+            try:
+                st.download_button(label, data=make, file_name=fname, mime=mime, key=k,
+                                   on_click="ignore", use_container_width=True)
+            except Exception:  # older Streamlit: build the file up front
+                st.download_button(label, data=make(), file_name=fname, mime=mime, key=k,
+                                   use_container_width=True)
+
+
 # --- 4. UI HELPERS ---
 def metric_card(label, value, badge_text, badge_class):
     st.markdown(f"""
@@ -775,6 +991,74 @@ def inventory_records(df, search_query):
         },
     )
     total_bar(view)
+
+    exp = view.reset_index(drop=True)[["quantity", "unit", "name", "description", "category", "price", "amount"]]
+    exp.insert(0, "No.", range(1, len(exp) + 1))
+    exp.columns = ["No.", "Qty", "Unit", "Item", "Description", "Category", "Unit Price (₱)", "Amount (₱)"]
+    flt = " · ".join(x for x in [f"Item: {name_filter}" if name_filter else "",
+                                  f"Category: {cat_filter}" if cat_filter != "All" else ""] if x)
+    export_menu("Inventory Report", report_subtitle(flt), exp, {"Unit Price (₱)", "Amount (₱)"},
+                total=float(view["amount"].sum()), base="inventory-report", key="exp_inv")
+
+
+def view_toggle(key):
+    try:
+        mode = st.segmented_control("View", ["Chart", "Data"], default="Chart", key=key,
+                                    label_visibility="collapsed")
+    except AttributeError:
+        mode = st.radio("View", ["Chart", "Data"], horizontal=True, key=key, label_visibility="collapsed")
+    return mode or "Chart"
+
+
+def data_view(agg, key):
+    t = agg.sort_values("value", ascending=False)[["category", "value", "pct"]]
+    st.dataframe(t, hide_index=True, use_container_width=True, height=300, column_config={
+        "category": "Category",
+        "value": st.column_config.NumberColumn("Value", format="₱%.2f"),
+        "pct": st.column_config.NumberColumn("Share", format="%.1f%%")})
+    st.download_button("Download CSV", t.to_csv(index=False).encode(), file_name="stock-by-category.csv",
+                       mime="text/csv", key=f"csv_{key}")
+
+
+@fragment
+def bar_panel(agg):
+    head, tog = st.columns([3, 2])
+    with head:
+        st.markdown("<div class='card-label'>Analytics</div>"
+                    "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
+    with tog:
+        mode = view_toggle("mode_bar")
+    if mode == "Data":
+        data_view(agg, "bar")
+        return
+    base = alt.Chart(agg).encode(
+        x=alt.X("category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=120)),
+        y=alt.Y("value:Q", title=None, axis=alt.Axis(format="~s", gridDash=[4, 4])),
+    )
+    bars = base.mark_bar(color=ORANGE, cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=48)
+    labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
+    st.altair_chart((bars + labels).properties(height=340, background="transparent"), use_container_width=True)
+
+
+@fragment
+def donut_panel(agg):
+    st.markdown("<div class='section-title'>Stock by Category</div>", unsafe_allow_html=True)
+    mode = view_toggle("mode_donut")
+    if mode == "Data":
+        data_view(agg, "donut")
+        return
+    donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
+        theta="value:Q",
+        color=alt.Color("category:N", legend=None, scale=alt.Scale(range=PALETTE)),
+        tooltip=["category", alt.Tooltip("value:Q", format=",.2f")],
+    ).properties(height=210, background="transparent")
+    st.altair_chart(donut, use_container_width=True)
+    rows = ""
+    for _, r in agg.sort_values("value", ascending=False).head(4).iterrows():
+        rows += (f"<div class='area-row'><span><b>{r['pct']:.0f}%</b>{r['category']}</span>"
+                 f"<span>₱{r['value']:,.0f}</span></div>")
+    st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
+                unsafe_allow_html=True)
 
 
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
@@ -894,32 +1178,9 @@ def main():
 
         left, right = st.columns([2, 1])
         with left.container(border=True):
-            st.markdown("<div class='card-label'>Analytics</div>"
-                        "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
-            base = alt.Chart(agg).encode(
-                x=alt.X("category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=120)),
-                y=alt.Y("value:Q", title=None, axis=alt.Axis(format="~s", gridDash=[4, 4])),
-            )
-            bars = base.mark_bar(color=ORANGE, cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=48)
-            labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
-            st.altair_chart((bars + labels).properties(height=340, background="transparent"), use_container_width=True)
-
+            bar_panel(agg)
         with right.container(border=True):
-            st.markdown("<div class='section-title'>Stock by Category</div>", unsafe_allow_html=True)
-            donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
-                theta="value:Q",
-                color=alt.Color("category:N", legend=None,
-                                scale=alt.Scale(range=PALETTE)),
-                tooltip=["category", alt.Tooltip("value:Q", format=",.2f")],
-            ).properties(height=210, background="transparent")
-            st.altair_chart(donut, use_container_width=True)
-
-            rows = ""
-            for _, r in agg.sort_values("value", ascending=False).head(4).iterrows():
-                rows += (f"<div class='area-row'><span><b>{r['pct']:.0f}%</b>{r['category']}</span>"
-                         f"<span>₱{r['value']:,.0f}</span></div>")
-            st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
-                        unsafe_allow_html=True)
+            donut_panel(agg)
 
         # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -1044,6 +1305,10 @@ def main():
                     "ts": "When (PH time)", "username": "User", "action": "Action",
                     "item_name": "Item", "details": "Details"})
                 st.caption("Showing the latest 500 events.")
+                exp_log = act.rename(columns={"ts": "When (PH time)", "username": "User", "action": "Action",
+                                              "item_name": "Item", "details": "Details"}).fillna("")
+                export_menu("Activity Log", report_subtitle(), exp_log, set(), None,
+                            base="activity-log", key="exp_log")
 
         with tab_users:
             users = list_users()
