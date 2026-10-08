@@ -793,6 +793,9 @@ def restore_session(sess=None):
     token = (sess.get("token") if isinstance(sess, dict) else None) or _cookie_token()
     row = lookup_session(token) if token else None
     if not row:
+        st.session_state["restore_note"] = (
+            "Device check: this browser did not report a saved sign-in." if not token else
+            "Device check: the saved sign-in was not valid any more (signed out, expired or removed).")
         return False
     st.session_state.update(user=row["username"], full_name=row["full_name"], session_token=token)
     return True
@@ -867,6 +870,7 @@ def _form(key):
 
 
 def login_view():
+    note = st.session_state.get("restore_note")
     try:
         first_run = count_users() == 0
     except ProgrammingError:  # tables missing (setup was cached before they existed) -> create them now
@@ -914,6 +918,8 @@ def login_view():
                             st.session_state["login_msg"] = ("success", "Account created. Please sign in.")
                             st.rerun()
             else:
+                if note:
+                    st.caption(note)
                 st.markdown("<div class='section-title'>Sign in</div>"
                             "<div class='section-sub'>Authorized personnel only.</div>", unsafe_allow_html=True)
                 with _form("login_form"):
@@ -1284,8 +1290,8 @@ def main():
     if comp is not None:
         sess = comp(action=cmd[0], token=cmd[1], nonce=(str(time.time()) if cmd[0] else None),
                     key="dictnir_sess", default=None)
-    elif cmd[0]:
-        _cookie_js(*cmd)          # fallback if the component could not start
+    if cmd[0]:
+        _cookie_js(*cmd)          # also keep a cookie copy (second way to recognise this device)
 
     # ---- security gate: nothing below runs unless signed in ----
     if "user" not in st.session_state and not restore_session(sess):
@@ -1481,16 +1487,6 @@ def main():
                           f"Saved changes to {count} item(s)." if count else "No changes to save.")
                     st.rerun()
             total_bar(df)
-            col1, col2 = st.columns(2)
-            with col1:
-                item_id = st.selectbox("Select item ID", df["id"].tolist())
-                selected = df[df["id"] == item_id].iloc[0]
-            with col2:
-                st.markdown(f"**Item:** {selected['name']}  \n**Current quantity:** {selected['quantity']} {selected['unit']}")
-                new_qty = st.number_input("New total quantity", min_value=0,
-                                          value=int(selected["quantity"]), step=1)
-            st.button("Update quantity", use_container_width=True, on_click=do_update,
-                      args=(int(item_id), int(new_qty), selected["name"]))
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
