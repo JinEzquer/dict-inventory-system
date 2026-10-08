@@ -8,9 +8,11 @@ import html
 import os
 import re
 import secrets
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from pathlib import Path
 from xml.sax.saxutils import escape
 import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
@@ -509,6 +511,11 @@ def init_db(schema_version=None):
     return True
 
 
+CATEGORIES = ["Hardware / Peripherals", "Office Supplies", "Networking Equipment",
+              "Furniture & Fixtures", "ICT Equipment"]
+FIELD_LABELS = {"name": "Item", "category": "Category", "quantity": "Qty", "unit": "Unit",
+                "price": "Price", "min_threshold": "Min", "description": "Description"}
+NUMERIC_FIELDS = {"quantity", "price", "min_threshold"}
 UNITS = ["Reams", "Pcs.", "Boxes", "Packs", "Bottles", "Gallons", "Rolls",
          "Sets", "Pairs", "Cartridges", "Units"]
 
@@ -564,8 +571,55 @@ def delete_item(item_id):
     st.cache_data.clear()
 
 
+def _same(col, a, b):
+    if col in NUMERIC_FIELDS:
+        try:
+            return float(a) == float(b)
+        except (TypeError, ValueError):
+            return False
+    return str(_clean(a)).strip() == str(_clean(b)).strip()
+
+
+def validate_edits(edited):
+    errs = []
+    for _, r in edited.iterrows():
+        tag = f"Item #{int(r['id'])}"
+        if not str(_clean(r["name"])).strip():
+            errs.append(f"{tag}: the item name cannot be empty.")
+        for c in ("quantity", "price", "min_threshold"):
+            if pd.isna(r[c]) or float(r[c]) < 0:
+                errs.append(f"{tag}: {FIELD_LABELS[c]} must be a number of 0 or more.")
+    return errs
+
+
+def save_item_edits(orig, edited):
+    """Save every row that was changed and write one activity-log line per item."""
+    n = 0
+    with get_engine().begin() as conn:
+        for _, new in edited.iterrows():
+            old = orig[orig["id"] == new["id"]]
+            if old.empty:
+                continue
+            old = old.iloc[0]
+            diffs = [f"{FIELD_LABELS[c]}: {_clean(old[c])} → {_clean(new[c])}"
+                     for c in FIELD_LABELS if not _same(c, old[c], new[c])]
+            if not diffs:
+                continue
+            conn.exec_driver_sql(
+                "UPDATE items SET name=%s, category=%s, quantity=%s, unit=%s, price=%s, "
+                "min_threshold=%s, description=%s WHERE id=%s",
+                (str(new["name"]).strip(), _clean(new["category"]) or None, int(new["quantity"]),
+                 str(_clean(new["unit"])).strip() or "Pcs.", float(new["price"]), int(new["min_threshold"]),
+                 str(_clean(new["description"])).strip(), int(new["id"])))
+            _log(conn, "EDIT_ITEM", int(new["id"]), str(new["name"]).strip(), "; ".join(diffs)[:500])
+            n += 1
+    if n:
+        st.cache_data.clear()
+    return n
+
+
 # --- 3b. SECURITY: accounts, login, lockout, activity log ---
-REMEMBER_DAYS = 7         # a device stays signed in this long
+REMEMBER_DAYS = 30        # a device stays signed in this long (renewed each time it is used)
 COOKIE_NAME = "dictnir_session"
 MAX_ATTEMPTS = 5          # wrong passwords before the account is locked
 LOCK_MINUTES = 5
@@ -575,7 +629,7 @@ ACTION_LABELS = {
     "LOGIN": "Signed in", "LOGOUT": "Signed out", "SESSION_EXPIRED": "Session expired",
     "LOGIN_FAILED": "Failed sign-in", "LOGIN_BLOCKED": "Blocked (locked account)",
     "ADD_ITEM": "Added item", "UPDATE_STOCK": "Changed stock", "DELETE_ITEM": "Deleted item",
-    "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
+    "EDIT_ITEM": "Edited item", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
 }
 
 
@@ -678,9 +732,65 @@ def _cookie_token():
         return None
 
 
-def restore_session():
+SESSION_HTML = r"""<!doctype html><html><body style="margin:0"><script>
+(function () {
+  var KEY = 'dictnir_token', DAYS = %DAYS%, sent = false, lastNonce = null;
+  function post(type, extra) {
+    var m = { isStreamlitMessage: true, type: type };
+    for (var k in extra) m[k] = extra[k];
+    window.parent.postMessage(m, '*');
+  }
+  function save(t) { try { localStorage.setItem(KEY, JSON.stringify({ t: t, e: Date.now() + DAYS * 864e5 })); } catch (e) {} }
+  function read() {
+    try {
+      var o = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!o || !o.t || o.e < Date.now()) { localStorage.removeItem(KEY); return null; }
+      save(o.t);                       // renew: an actively used device stays signed in
+      return o.t;
+    } catch (e) { return null; }
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.type !== 'streamlit:render') return;
+    var a = d.args || {};
+    if (a.action && a.nonce !== lastNonce) {
+      lastNonce = a.nonce;
+      if (a.action === 'set') save(a.token);
+      if (a.action === 'clear') { try { localStorage.removeItem(KEY); } catch (e) {} }
+    }
+    if (!sent) { sent = true; post('streamlit:setComponentValue', { value: { token: read() }, dataType: 'json' }); }
+  });
+  post('streamlit:componentReady', { apiVersion: 1 });
+  post('streamlit:setFrameHeight', { height: 0 });
+})();
+</script></body></html>""".replace("%DAYS%", str(REMEMBER_DAYS))
+
+
+@st.cache_resource(show_spinner=False)
+def _session_component():
+    """Tiny invisible component that remembers the sign-in token in THIS browser (localStorage)."""
+    try:
+        import streamlit.components.v1 as comps
+        d = Path(tempfile.gettempdir()) / "dictnir_session_component"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.html").write_text(SESSION_HTML, encoding="utf-8")
+        return comps.declare_component("dictnir_session", path=str(d))
+    except Exception:
+        return None
+
+
+def waiting_view():
+    st.markdown("<div style='text-align:center; margin-top:28vh'><div class='page-title'>Loading…</div>"
+                "<div class='section-sub'>Checking this device</div></div>", unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 1, 1])
+    with mid:
+        st.button("Taking too long? Go to sign in", use_container_width=True,
+                  on_click=lambda: st.session_state.update(skip_restore=True))
+
+
+def restore_session(sess=None):
     """Page reload on a device that is already signed in: no password needed again."""
-    token = _cookie_token()
+    token = (sess.get("token") if isinstance(sess, dict) else None) or _cookie_token()
     row = lookup_session(token) if token else None
     if not row:
         return False
@@ -1167,12 +1277,21 @@ def page_header(title, subtitle=None):
 def main():
     init_db(SCHEMA_VERSION)
 
-    cmd = st.session_state.pop("cookie_cmd", None)   # set / clear this device's sign-in cookie
-    if cmd:
-        _cookie_js(*cmd)
+    # this device's "stay signed in" memory (set on sign-in, cleared on sign-out)
+    comp = _session_component()
+    cmd = st.session_state.pop("cookie_cmd", None) or (None, None)
+    sess = None
+    if comp is not None:
+        sess = comp(action=cmd[0], token=cmd[1], nonce=(str(time.time()) if cmd[0] else None),
+                    key="dictnir_sess", default=None)
+    elif cmd[0]:
+        _cookie_js(*cmd)          # fallback if the component could not start
 
     # ---- security gate: nothing below runs unless signed in ----
-    if "user" not in st.session_state and not restore_session():
+    if "user" not in st.session_state and not restore_session(sess):
+        if comp is not None and sess is None and not st.session_state.get("skip_restore"):
+            waiting_view()        # the browser is still reporting what it remembers (about a second)
+            return
         login_view()
         return
 
@@ -1324,21 +1443,43 @@ def main():
     # ================= RESTOCK =================
     elif choice == "Restock / Adjust":
         page_header("Restock / Adjust Stock",
-                    "Update quantities when shipments arrive or items are issued to personnel.")
+                    "Correct mistakes in the table, or update quantities when shipments arrive or items are issued.")
         show_flash()
         if df.empty:
             st.info("No items available to update.")
         else:
-            st.dataframe(
-                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
-                use_container_width=True, hide_index=True,
-                column_config={
-                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                    "description": "Description", "category": "Category",
-                    "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
-                    "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
-                },
-            )
+            st.markdown("<div class='section-sub'>Made a typo? Click any cell to correct it, then press "
+                        "<b>Save changes</b>.</div>", unsafe_allow_html=True)
+            cols = ["id", "quantity", "unit", "name", "description", "category", "price", "min_threshold", "amount"]
+            unit_opts = UNITS + sorted(set(df["unit"]) - set(UNITS))
+            cat_opts = CATEGORIES + sorted(set(df["category"].dropna()) - set(CATEGORIES))
+            ver = st.session_state.get("editor_v", 0)
+            with _form("edit_items_form"):
+                edited = st.data_editor(
+                    df[cols], key=f"stock_editor_{ver}", hide_index=True, use_container_width=True,
+                    num_rows="fixed", disabled=["id", "amount"],
+                    column_config={
+                        "id": "ID",
+                        "quantity": st.column_config.NumberColumn("Qty", min_value=0, step=1, format="%d"),
+                        "unit": st.column_config.SelectboxColumn("Unit", options=unit_opts, required=True),
+                        "name": st.column_config.TextColumn("Item", required=True),
+                        "description": st.column_config.TextColumn("Description"),
+                        "category": st.column_config.SelectboxColumn("Category", options=cat_opts),
+                        "price": st.column_config.NumberColumn("Unit Price", min_value=0.0, step=0.01, format="₱%.2f"),
+                        "min_threshold": st.column_config.NumberColumn("Min", min_value=0, step=1, format="%d"),
+                        "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
+                    })
+                saved = st.form_submit_button("Save changes", use_container_width=True)
+            if saved:
+                errs = validate_edits(edited)
+                if errs:
+                    st.error("\n\n".join(errs))
+                else:
+                    count = save_item_edits(df, edited)
+                    st.session_state["editor_v"] = ver + 1
+                    flash("success" if count else "info",
+                          f"Saved changes to {count} item(s)." if count else "No changes to save.")
+                    st.rerun()
             total_bar(df)
             col1, col2 = st.columns(2)
             with col1:
