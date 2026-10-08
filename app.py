@@ -790,12 +790,14 @@ def waiting_view():
 
 def restore_session(sess=None):
     """Page reload on a device that is already signed in: no password needed again."""
-    token = (sess.get("token") if isinstance(sess, dict) else None) or _cookie_token()
+    comp_tok = sess.get("token") if isinstance(sess, dict) else None
+    cookie_tok = _cookie_token()
+    token = comp_tok or cookie_tok
     row = lookup_session(token) if token else None
+    st.session_state["restore_debug"] = (
+        f"Device check - saved in browser storage: {'yes' if comp_tok else 'no'} | "
+        f"saved in cookie: {'yes' if cookie_tok else 'no'} | accepted by database: {'yes' if row else 'no'}")
     if not row:
-        st.session_state["restore_note"] = (
-            "Device check: this browser did not report a saved sign-in." if not token else
-            "Device check: the saved sign-in was not valid any more (signed out, expired or removed).")
         return False
     st.session_state.update(user=row["username"], full_name=row["full_name"], session_token=token)
     return True
@@ -870,7 +872,7 @@ def _form(key):
 
 
 def login_view():
-    note = st.session_state.get("restore_note")
+    note = st.session_state.get("restore_debug") if st.query_params.get("debug") else None  # add ?debug=1 to the address
     try:
         first_run = count_users() == 0
     except ProgrammingError:  # tables missing (setup was cached before they existed) -> create them now
