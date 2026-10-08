@@ -1185,7 +1185,7 @@ fragment = getattr(st, "fragment", None) or (lambda f: f)  # older Streamlit: no
 
 
 @fragment
-def inventory_records(df, search_query):
+def inventory_records(df, search_query=""):
     """Filters only rerun THIS block, not the whole dashboard."""
     low_mask = df["quantity"] <= df["min_threshold"]
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -1352,22 +1352,10 @@ def main():
 
     # ================= DASHBOARD =================
     if choice == "Dashboard":
-        # Top bar: search + Add New Item
-        top_search, top_btn = st.columns([6, 1.2])
-        with top_search:
-            search_query = st.text_input("Search", placeholder="Search item name...",
-                                         label_visibility="collapsed")
-        with top_btn:
-            try:
-                st.button("Add New Item", icon=":material/add:", use_container_width=True,
-                          on_click=go_to, args=("Add Item",))
-            except TypeError:  # older Streamlit without icon support
-                st.button("Add New Item", use_container_width=True, on_click=go_to, args=("Add Item",))
-
         page_header("Key Metrics", "DICT Negros Island Region · Office supply & property inventory")
 
         if df.empty:
-            st.info("No inventory records yet. Click **Add New Item** to register supplies or hardware.")
+            st.info("No inventory records yet. Open **Add Item** in the menu to register supplies or hardware.")
             return
 
         df["value"] = df["quantity"] * df["price"]
@@ -1416,7 +1404,7 @@ def main():
             },
         )
 
-        inventory_records(df, search_query)
+        inventory_records(df)
         if len(low_df):
             st.warning("**Attention:** some items are at or below their minimum level. Please arrange restocking.")
 
