@@ -170,6 +170,12 @@ THEME_JS = r"""<script>
 </script>"""
 
 
+MOTION_CSS = "" if st.session_state.get("anim_on") else """
+.stApp::before, .stApp::after, [data-testid="stAppViewContainer"]::before,
+section[data-testid="stSidebar"]::before, section[data-testid="stSidebar"]::after,
+.login-bg .ring, .login-bg .orb { animation: none !important; will-change: auto !important; }
+"""
+
 # --- 2. CUSTOM CSS (Stockpile-style: white, orange accent, black buttons) ---
 st.markdown(f"""
 <style>
@@ -420,6 +426,11 @@ button[data-testid="stBaseButton-segmented_controlActive"] {{
 [data-testid="stMain"] .stDownloadButton > button p {{ color: inherit; }}
 [data-testid="stPopover"] > div > button {{ border-radius: 8px; font-weight: 600; }}
 
+/* Streamlit greys out ("stale") the page for a second while it reruns: that is what feels like lag */
+[data-stale="true"], [data-testid="stElementContainer"][data-stale="true"], .stale-element {{
+    opacity: 1 !important; transition: none !important; }}
+section[data-testid="stSidebar"] label p {{ color: #cbd2de; }}
+
 /* hide the 0-height theme-detector iframe */
 .stElementContainer:has(iframe[height="0"]), div[data-testid="stElementContainer"]:has(iframe[height="0"]) {{
     position: absolute; height: 0; width: 0; overflow: hidden; margin: 0; padding: 0;
@@ -427,6 +438,7 @@ button[data-testid="stBaseButton-segmented_controlActive"] {{
 
 /* ===== LIGHT MODE ONLY: soft sky-blue theme (dark mode untouched) ===== */
 {LIGHT_CSS}
+{MOTION_CSS}
 </style>
 """, unsafe_allow_html=True)
 
@@ -667,6 +679,7 @@ def record_movement(item_id, kind, qty, project, move_date):
     return name, unit, after
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_movements():
     df = pd.read_sql("SELECT * FROM stock_movements ORDER BY movement_date DESC, id DESC", get_engine())
     if not df.empty:
@@ -739,6 +752,7 @@ def list_users():
     return pd.read_sql("SELECT username, full_name, created_at, locked_until FROM users ORDER BY created_at", get_engine())
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_activity(limit=500):
     df = pd.read_sql(
         f"SELECT ts, username, action, item_name, details FROM activity_log ORDER BY id DESC LIMIT {int(limit)}",
@@ -1444,6 +1458,71 @@ def movement_report(sub, kind, label, filters_text):
                 total_label=f"TOTAL {label.upper()}")
 
 
+@fragment
+def activity_panel():
+    act = get_activity()
+    if act.empty:
+        st.info("No activity recorded yet.")
+    else:
+        c1, c2 = st.columns(2)
+        who = c1.selectbox("User", ["All"] + sorted(act["username"].dropna().unique().tolist()))
+        what = c2.selectbox("Action", ["All"] + sorted(act["action"].dropna().unique().tolist()))
+        if who != "All":
+            act = act[act["username"] == who]
+        if what != "All":
+            act = act[act["action"] == what]
+        # fixed pixel widths: when the table is wider than the page a SIDEWAYS scrollbar appears
+        det_w = int(min(max(320, act["details"].fillna("").str.len().max() * 7.5 + 30), 1600)) if len(act) else 320
+        item_w = int(min(max(160, act["item_name"].fillna("").str.len().max() * 8 + 30), 420)) if len(act) else 160
+        st.dataframe(act, hide_index=True, height=min(36 * (len(act) + 1) + 6, 620), column_config={
+            "ts": st.column_config.TextColumn("When (PH time)", width=190),
+            "username": st.column_config.TextColumn("User", width=150),
+            "action": st.column_config.TextColumn("Action", width=170),
+            "item_name": st.column_config.TextColumn("Item", width=item_w),
+            "details": st.column_config.TextColumn("Details", width=det_w)})
+        st.caption("Showing the latest 500 events.")
+        exp_log = act.rename(columns={"ts": "When (PH time)", "username": "User", "action": "Action",
+                                      "item_name": "Item", "details": "Details"}).fillna("")
+        export_menu("Activity Log", report_subtitle(), exp_log, set(), None,
+                    base="activity-log", key="exp_log")
+
+
+@fragment
+def movements_panel():
+    mv = get_movements()
+    if mv.empty:
+        st.info("No stock movements yet. Add or deduct stock from the Restock / Adjust page "
+                "and every movement will be recorded here.")
+    else:
+        f1, f2, f3 = st.columns(3)
+        item_f = f1.selectbox("Item", ["All"] + sorted(mv["item_name"].dropna().unique().tolist()), key="mv_item")
+        user_f = f2.selectbox("Done by", ["All"] + sorted(mv["done_by"].dropna().unique().tolist()), key="mv_user")
+        lo, hi = mv["movement_date"].min().date(), mv["movement_date"].max().date()
+        rng = f3.date_input("Date range", value=(lo, hi), min_value=lo, max_value=max(hi, datetime.now(PH_TZ).date()),
+                            key=f"mv_range_{lo}_{hi}")   # new records = fresh range, never hides them
+        view_mv = mv
+        notes = []
+        if item_f != "All":
+            view_mv = view_mv[view_mv["item_name"] == item_f]
+            notes.append(f"Item: {item_f}")
+        if user_f != "All":
+            view_mv = view_mv[view_mv["done_by"] == user_f]
+            notes.append(f"By: {user_f}")
+        if isinstance(rng, (list, tuple)) and len(rng) == 2:
+            view_mv = view_mv[(view_mv["movement_date"].dt.date >= rng[0]) & (view_mv["movement_date"].dt.date <= rng[1])]
+            notes.append(f"{rng[0]:%b %d, %Y} to {rng[1]:%b %d, %Y}")
+        n_d = int((view_mv["movement_type"] == "DEDUCT").sum())
+        n_a = int((view_mv["movement_type"] == "ADD").sum())
+        tab_all, tab_d, tab_a = st.tabs([f"All movements ({len(view_mv)})", f"Deductions ({n_d})",
+                                         f"Additions ({n_a})"])
+        with tab_all:
+            movement_report(view_mv, "ALL", "Moved", " · ".join(notes))
+        with tab_d:
+            movement_report(view_mv[view_mv["movement_type"] == "DEDUCT"], "DEDUCT", "Deducted", " · ".join(notes))
+        with tab_a:
+            movement_report(view_mv[view_mv["movement_type"] == "ADD"], "ADD", "Added", " · ".join(notes))
+
+
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
 
 
@@ -1514,6 +1593,7 @@ def main():
             <div class="foot-sub">Signed in · DICT Negros Island Region</div>
         </div>
     """, unsafe_allow_html=True)
+    st.sidebar.toggle("Animated background", key="anim_on", help="Off = smoother on slower computers")
     try:
         st.sidebar.button("Sign out", icon=":material/logout:", key="signout", use_container_width=True,
                           on_click=logout)
@@ -1686,65 +1766,10 @@ def main():
         tab_log, tab_moves, tab_users, tab_pw = st.tabs(["Activity Log", "Stock Movements", "User Accounts", "My Password"])
 
         with tab_log:
-            act = get_activity()
-            if act.empty:
-                st.info("No activity recorded yet.")
-            else:
-                c1, c2 = st.columns(2)
-                who = c1.selectbox("User", ["All"] + sorted(act["username"].dropna().unique().tolist()))
-                what = c2.selectbox("Action", ["All"] + sorted(act["action"].dropna().unique().tolist()))
-                if who != "All":
-                    act = act[act["username"] == who]
-                if what != "All":
-                    act = act[act["action"] == what]
-                # fixed pixel widths: when the table is wider than the page a SIDEWAYS scrollbar appears
-                det_w = int(min(max(320, act["details"].fillna("").str.len().max() * 7.5 + 30), 1600)) if len(act) else 320
-                item_w = int(min(max(160, act["item_name"].fillna("").str.len().max() * 8 + 30), 420)) if len(act) else 160
-                st.dataframe(act, hide_index=True, height=min(36 * (len(act) + 1) + 6, 620), column_config={
-                    "ts": st.column_config.TextColumn("When (PH time)", width=190),
-                    "username": st.column_config.TextColumn("User", width=150),
-                    "action": st.column_config.TextColumn("Action", width=170),
-                    "item_name": st.column_config.TextColumn("Item", width=item_w),
-                    "details": st.column_config.TextColumn("Details", width=det_w)})
-                st.caption("Showing the latest 500 events.")
-                exp_log = act.rename(columns={"ts": "When (PH time)", "username": "User", "action": "Action",
-                                              "item_name": "Item", "details": "Details"}).fillna("")
-                export_menu("Activity Log", report_subtitle(), exp_log, set(), None,
-                            base="activity-log", key="exp_log")
+            activity_panel()
 
         with tab_moves:
-            mv = get_movements()
-            if mv.empty:
-                st.info("No stock movements yet. Add or deduct stock from the Restock / Adjust page "
-                        "and every movement will be recorded here.")
-            else:
-                f1, f2, f3 = st.columns(3)
-                item_f = f1.selectbox("Item", ["All"] + sorted(mv["item_name"].dropna().unique().tolist()), key="mv_item")
-                user_f = f2.selectbox("Done by", ["All"] + sorted(mv["done_by"].dropna().unique().tolist()), key="mv_user")
-                lo, hi = mv["movement_date"].min().date(), mv["movement_date"].max().date()
-                rng = f3.date_input("Date range", value=(lo, hi), min_value=lo, max_value=max(hi, datetime.now(PH_TZ).date()),
-                                    key=f"mv_range_{lo}_{hi}")   # new records = fresh range, never hides them
-                view_mv = mv
-                notes = []
-                if item_f != "All":
-                    view_mv = view_mv[view_mv["item_name"] == item_f]
-                    notes.append(f"Item: {item_f}")
-                if user_f != "All":
-                    view_mv = view_mv[view_mv["done_by"] == user_f]
-                    notes.append(f"By: {user_f}")
-                if isinstance(rng, (list, tuple)) and len(rng) == 2:
-                    view_mv = view_mv[(view_mv["movement_date"].dt.date >= rng[0]) & (view_mv["movement_date"].dt.date <= rng[1])]
-                    notes.append(f"{rng[0]:%b %d, %Y} to {rng[1]:%b %d, %Y}")
-                n_d = int((view_mv["movement_type"] == "DEDUCT").sum())
-                n_a = int((view_mv["movement_type"] == "ADD").sum())
-                tab_all, tab_d, tab_a = st.tabs([f"All movements ({len(view_mv)})", f"Deductions ({n_d})",
-                                                 f"Additions ({n_a})"])
-                with tab_all:
-                    movement_report(view_mv, "ALL", "Moved", " · ".join(notes))
-                with tab_d:
-                    movement_report(view_mv[view_mv["movement_type"] == "DEDUCT"], "DEDUCT", "Deducted", " · ".join(notes))
-                with tab_a:
-                    movement_report(view_mv[view_mv["movement_type"] == "ADD"], "ADD", "Added", " · ".join(notes))
+            movements_panel()
 
         with tab_users:
             users = list_users()
