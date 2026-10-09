@@ -1378,43 +1378,69 @@ def movement_report(sub, kind, label, filters_text):
     if sub.empty:
         st.info(f"No {label.lower()} records for these filters.")
         return
-    total_amt = float(sub["amount"].sum())
-    per_unit = sub.groupby("unit")["quantity"].sum()
-    qty_text = " · ".join(f"{int(q):,} {u}" for u, q in per_unit.items())
+    is_all = kind == "ALL"
+    type_names = {"DEDUCT": "Deducted", "ADD": "Added"}
     c1, c2, c3 = st.columns(3)
-    with c1:
-        metric_card(f"Total {label.lower()} (value)", f"₱{total_amt:,.2f}", f"{len(sub)} record(s)",
-                    "badge-red" if kind == "DEDUCT" else "badge-green")
-    with c2:
-        metric_card(f"Total quantity {label.lower()}", qty_text, "all items in this view", "badge-orange")
-    with c3:
-        metric_card("Items involved", f"{sub['item_name'].nunique()}", f"{sub['done_by'].nunique()} user(s)",
-                    "badge-orange")
+    if is_all:
+        ded, add = sub[sub["movement_type"] == "DEDUCT"], sub[sub["movement_type"] == "ADD"]
+        with c1:
+            metric_card("Deducted (value)", f"₱{float(ded['amount'].sum()):,.2f}", f"{len(ded)} record(s)", "badge-red")
+        with c2:
+            metric_card("Added (value)", f"₱{float(add['amount'].sum()):,.2f}", f"{len(add)} record(s)", "badge-green")
+        with c3:
+            metric_card("All records", f"{len(sub)}",
+                        f"{sub['item_name'].nunique()} item(s) · {sub['done_by'].nunique()} user(s)", "badge-orange")
+        total_amt = None
+    else:
+        total_amt = float(sub["amount"].sum())
+        per_unit = sub.groupby("unit")["quantity"].sum()
+        qty_text = " · ".join(f"{int(q):,} {u}" for u, q in per_unit.items())
+        with c1:
+            metric_card(f"Total {label.lower()} (value)", f"₱{total_amt:,.2f}", f"{len(sub)} record(s)",
+                        "badge-red" if kind == "DEDUCT" else "badge-green")
+        with c2:
+            metric_card(f"Total quantity {label.lower()}", qty_text, "all items in this view", "badge-orange")
+        with c3:
+            metric_card("Items involved", f"{sub['item_name'].nunique()}", f"{sub['done_by'].nunique()} user(s)",
+                        "badge-orange")
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     show = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"),
+                      type=sub["movement_type"].map(type_names),
                       change=sub["balance_before"].astype(str) + " → " + sub["balance_after"].astype(str))
-    st.dataframe(show[["date", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]],
-                 use_container_width=True, hide_index=True, column_config={
-                     "date": "Date", "item_name": "Item", "quantity": "Qty", "unit": "Unit",
-                     "project": "Project", "done_by": "Done by", "change": "Stock before → after",
-                     "amount": st.column_config.NumberColumn("Value", format="₱%.2f")})
-    with st.expander("Summary per item"):
-        summ = (sub.groupby(["item_name", "unit"], as_index=False)
-                   .agg(records=("id", "count"), quantity=("quantity", "sum"), amount=("amount", "sum"))
-                   .sort_values("amount", ascending=False))
-        st.dataframe(summ, use_container_width=True, hide_index=True, column_config={
-            "item_name": "Item", "unit": "Unit", "records": "Records", "quantity": "Total qty",
-            "amount": st.column_config.NumberColumn("Total value", format="₱%.2f")})
+    cols = ["date", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]
+    if is_all:
+        cols.insert(1, "type")
+    st.dataframe(show[cols], use_container_width=True, hide_index=True, column_config={
+        "date": "Date", "type": "Type", "item_name": "Item", "quantity": "Qty", "unit": "Unit",
+        "project": "Project", "done_by": "Done by", "change": "Stock before → after",
+        "amount": st.column_config.NumberColumn("Value", format="₱%.2f")})
 
-    exp = sub[["movement_date", "item_name", "quantity", "unit", "project", "done_by",
-               "balance_before", "balance_after", "unit_price", "amount"]].copy()
-    exp["movement_date"] = exp["movement_date"].dt.strftime("%b %d, %Y")
+    with st.expander("Summary per item"):
+        g = sub.assign(added=sub["quantity"].where(sub["movement_type"] == "ADD", 0),
+                       deducted=sub["quantity"].where(sub["movement_type"] == "DEDUCT", 0))
+        summ = (g.groupby(["item_name", "unit"], as_index=False)
+                 .agg(records=("id", "count"), added=("added", "sum"), deducted=("deducted", "sum"),
+                      amount=("amount", "sum")).sort_values("amount", ascending=False))
+        if not is_all:
+            summ = summ.drop(columns=["deducted" if kind == "ADD" else "added"])
+        st.dataframe(summ, use_container_width=True, hide_index=True, column_config={
+            "item_name": "Item", "unit": "Unit", "records": "Records", "added": "Total added",
+            "deducted": "Total deducted", "amount": st.column_config.NumberColumn("Total value", format="₱%.2f")})
+
+    exp = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"), type=sub["movement_type"].map(type_names))
+    ecols = ["date", "item_name", "quantity", "unit", "project", "done_by", "balance_before", "balance_after",
+             "unit_price", "amount"]
+    enames = ["Date", "Item", "Qty", "Unit", "Project", "Done by", "Before", "After", "Unit Price (₱)", "Value (₱)"]
+    if is_all:
+        ecols.insert(1, "type")
+        enames.insert(1, "Type")
+    exp = exp[ecols].copy()
     exp.insert(0, "No.", range(1, len(exp) + 1))
-    exp.columns = ["No.", "Date", "Item", "Qty", "Unit", "Project", "Done by", "Before", "After",
-                   "Unit Price (₱)", "Value (₱)"]
-    export_menu(f"Stock {label} Report", report_subtitle(filters_text), exp, {"Unit Price (₱)", "Value (₱)"},
-                total=total_amt, base=f"stock-{label.lower()}", key=f"exp_mv_{kind}",
+    exp.columns = ["No."] + enames
+    export_menu("Stock Movements Report" if is_all else f"Stock {label} Report", report_subtitle(filters_text), exp,
+                {"Unit Price (₱)", "Value (₱)"}, total=total_amt,
+                base="stock-movements" if is_all else f"stock-{label.lower()}", key=f"exp_mv_{kind}",
                 total_label=f"TOTAL {label.upper()}")
 
 
@@ -1590,23 +1616,50 @@ def main():
         if df.empty:
             st.info("No items available to update.")
         else:
-            ver = st.session_state.get("tbl_ver", 0)
-            event = st.dataframe(
-                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
-                key=f"stock_tbl_{ver}", hide_index=True, use_container_width=True,
-                on_select="rerun", selection_mode=["single-row", "single-cell"],
-                column_config={
-                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                    "description": "Description", "category": "Category",
-                    "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
-                    "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
-                })
-            total_bar(df)
-            sel = event.selection
-            pos = sel.cells[0][0] if sel.cells else (sel.rows[0] if sel.rows else None)
-            if pos is not None:
-                r = df.iloc[pos]
-                stock_dialog(int(r["id"]), r["name"], r["unit"], int(r["quantity"] or 0))
+            cats = ["All"] + sorted(df["category"].dropna().unique().tolist())
+            counts = df["category"].value_counts().to_dict()
+            counts["All"] = len(df)
+            f1, f2 = st.columns([3, 2])
+            with f1:
+                try:
+                    cat = st.segmented_control("Category", cats, default="All", key="rs_cat",
+                                               format_func=lambda c: f"{c} ({counts.get(c, 0)})",
+                                               label_visibility="collapsed")
+                except AttributeError:  # older Streamlit
+                    cat = st.selectbox("Category", cats, key="rs_cat")
+            with f2:
+                q = st.text_input("Search", placeholder="Search item name...", key="rs_q",
+                                  label_visibility="collapsed")
+            cat = cat or "All"
+
+            shown = df
+            if cat != "All":
+                shown = shown[shown["category"] == cat]
+            if q:
+                shown = shown[shown["name"].str.contains(q, case=False, na=False)]
+            shown = shown.reset_index(drop=True)
+
+            if shown.empty:
+                st.info("No items match this category / search.")
+            else:
+                ver = st.session_state.get("tbl_ver", 0)
+                sig = hashlib.md5(f"{cat}|{q}".encode()).hexdigest()[:8]   # new filter = fresh selection
+                event = st.dataframe(
+                    shown[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
+                    key=f"stock_tbl_{ver}_{sig}", hide_index=True, use_container_width=True,
+                    on_select="rerun", selection_mode=["single-row", "single-cell"],
+                    column_config={
+                        "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
+                        "description": "Description", "category": "Category",
+                        "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+                        "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
+                    })
+                total_bar(shown)
+                sel = event.selection
+                pos = sel.cells[0][0] if sel.cells else (sel.rows[0] if sel.rows else None)
+                if pos is not None:
+                    r = shown.iloc[pos]
+                    stock_dialog(int(r["id"]), r["name"], r["unit"], int(r["quantity"] or 0))
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
@@ -1670,7 +1723,7 @@ def main():
                 user_f = f2.selectbox("Done by", ["All"] + sorted(mv["done_by"].dropna().unique().tolist()), key="mv_user")
                 lo, hi = mv["movement_date"].min().date(), mv["movement_date"].max().date()
                 rng = f3.date_input("Date range", value=(lo, hi), min_value=lo, max_value=max(hi, datetime.now(PH_TZ).date()),
-                                    key="mv_range")
+                                    key=f"mv_range_{lo}_{hi}")   # new records = fresh range, never hides them
                 view_mv = mv
                 notes = []
                 if item_f != "All":
@@ -1682,7 +1735,12 @@ def main():
                 if isinstance(rng, (list, tuple)) and len(rng) == 2:
                     view_mv = view_mv[(view_mv["movement_date"].dt.date >= rng[0]) & (view_mv["movement_date"].dt.date <= rng[1])]
                     notes.append(f"{rng[0]:%b %d, %Y} to {rng[1]:%b %d, %Y}")
-                tab_d, tab_a = st.tabs(["Deductions", "Additions"])
+                n_d = int((view_mv["movement_type"] == "DEDUCT").sum())
+                n_a = int((view_mv["movement_type"] == "ADD").sum())
+                tab_all, tab_d, tab_a = st.tabs([f"All movements ({len(view_mv)})", f"Deductions ({n_d})",
+                                                 f"Additions ({n_a})"])
+                with tab_all:
+                    movement_report(view_mv, "ALL", "Moved", " · ".join(notes))
                 with tab_d:
                     movement_report(view_mv[view_mv["movement_type"] == "DEDUCT"], "DEDUCT", "Deducted", " · ".join(notes))
                 with tab_a:
