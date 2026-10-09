@@ -1616,21 +1616,15 @@ def main():
         if df.empty:
             st.info("No items available to update.")
         else:
-            cats = ["All"] + sorted(df["category"].dropna().unique().tolist())
+            cat_opts = ["All"] + CATEGORIES + sorted(set(df["category"].dropna()) - set(CATEGORIES))
             counts = df["category"].value_counts().to_dict()
             counts["All"] = len(df)
-            f1, f2 = st.columns([3, 2])
+            f1, f2 = st.columns([1, 1])
             with f1:
-                try:
-                    cat = st.segmented_control("Category", cats, default="All", key="rs_cat",
-                                               format_func=lambda c: f"{c} ({counts.get(c, 0)})",
-                                               label_visibility="collapsed")
-                except AttributeError:  # older Streamlit
-                    cat = st.selectbox("Category", cats, key="rs_cat")
+                cat = st.selectbox("Category", cat_opts, key="rs_cat",
+                                   format_func=lambda c: f"{c} ({counts.get(c, 0)})")
             with f2:
-                q = st.text_input("Search", placeholder="Search item name...", key="rs_q",
-                                  label_visibility="collapsed")
-            cat = cat or "All"
+                q = st.text_input("Search item", placeholder="Search item name...", key="rs_q")
 
             shown = df
             if cat != "All":
@@ -1703,9 +1697,15 @@ def main():
                     act = act[act["username"] == who]
                 if what != "All":
                     act = act[act["action"] == what]
-                st.dataframe(act, use_container_width=True, hide_index=True, column_config={
-                    "ts": "When (PH time)", "username": "User", "action": "Action",
-                    "item_name": "Item", "details": "Details"})
+                # fixed pixel widths: when the table is wider than the page a SIDEWAYS scrollbar appears
+                det_w = int(min(max(320, act["details"].fillna("").str.len().max() * 7.5 + 30), 1600)) if len(act) else 320
+                item_w = int(min(max(160, act["item_name"].fillna("").str.len().max() * 8 + 30), 420)) if len(act) else 160
+                st.dataframe(act, hide_index=True, height=min(36 * (len(act) + 1) + 6, 620), column_config={
+                    "ts": st.column_config.TextColumn("When (PH time)", width=190),
+                    "username": st.column_config.TextColumn("User", width=150),
+                    "action": st.column_config.TextColumn("Action", width=170),
+                    "item_name": st.column_config.TextColumn("Item", width=item_w),
+                    "details": st.column_config.TextColumn("Details", width=det_w)})
                 st.caption("Showing the latest 500 events.")
                 exp_log = act.rename(columns={"ts": "When (PH time)", "username": "User", "action": "Action",
                                               "item_name": "Item", "details": "Details"}).fillna("")
