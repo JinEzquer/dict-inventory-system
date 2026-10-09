@@ -71,6 +71,8 @@ div[data-testid="stDataFrame"] { border-color: rgba(59,130,246,.22); }
 [data-testid="stMain"] .stButton > button:hover, [data-testid="stMain"] .stFormSubmitButton > button:hover { background: #2563EB; border-color: #2563EB; }
 
 div[data-testid="stVegaLiteChart"] { filter: hue-rotate(180deg); }
+div[role="dialog"] .stButton > button { background: #3B82F6; border-color: #3B82F6; }
+div[role="dialog"] .stButton > button:hover { background: #2563EB; border-color: #2563EB; }
 button[data-baseweb="tab"][aria-selected="true"] { color: #2563EB !important; }
 div[data-baseweb="tab-highlight"] { background-color: #3B82F6 !important; }
 button[data-testid="stBaseButton-segmented_controlActive"] { background: rgba(59,130,246,.16) !important; border-color: #3B82F6 !important; color: #2563EB !important; }
@@ -403,6 +405,11 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-marker) .section-sub 
 button[data-baseweb="tab"][aria-selected="true"] {{ color: #FF6A00 !important; }}
 div[data-baseweb="tab-highlight"] {{ background-color: #FF6A00 !important; }}
 
+/* Pop-up (dialog) buttons */
+div[role="dialog"] .stButton > button {{ background: #FF6A00; color: #fff; border: 1px solid #FF6A00; border-radius: 8px; font-weight: 600; }}
+div[role="dialog"] .stButton > button:hover {{ background: #e65f00; border-color: #e65f00; color: #fff; }}
+div[role="dialog"] .stButton > button p {{ color: #fff; }}
+
 /* Chart/Data toggle + download buttons */
 button[data-testid="stBaseButton-segmented_controlActive"] {{
     background: rgba(255,106,0,.18) !important; border-color: #FF6A00 !important; color: #FF6A00 !important; }}
@@ -456,7 +463,7 @@ def get_engine():
     return _make_engine(db_url)
 
 
-SCHEMA_VERSION = 4  # bump this whenever tables/columns change so setup re-runs
+SCHEMA_VERSION = 5  # bump this whenever tables/columns change so setup re-runs
 
 
 @st.cache_resource(show_spinner=False)
@@ -506,6 +513,23 @@ def init_db(schema_version=None):
                 username TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 expires_at TIMESTAMPTZ NOT NULL
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS stock_movements (
+                id SERIAL PRIMARY KEY,
+                item_id INTEGER,
+                item_name TEXT,
+                unit TEXT,
+                movement_type TEXT,
+                quantity INTEGER,
+                balance_before INTEGER,
+                balance_after INTEGER,
+                unit_price REAL,
+                project TEXT,
+                movement_date DATE,
+                done_by TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
     return True
@@ -618,6 +642,39 @@ def save_item_edits(orig, edited):
     return n
 
 
+def record_movement(item_id, kind, qty, project, move_date):
+    """Add or deduct stock AND keep a permanent record (who, when, project, balance before/after)."""
+    with get_engine().begin() as conn:
+        row = conn.exec_driver_sql(
+            "SELECT name, unit, quantity, price FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
+        if not row:
+            raise ValueError("This item no longer exists.")
+        name, unit, before, price = row
+        before = before or 0
+        after = before + qty if kind == "ADD" else before - qty
+        if after < 0:
+            raise ValueError(f"Only {before:,} {unit} left in stock.")
+        conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (after, item_id))
+        conn.exec_driver_sql(
+            "INSERT INTO stock_movements (item_id, item_name, unit, movement_type, quantity, balance_before, "
+            "balance_after, unit_price, project, movement_date, done_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (item_id, name, unit, kind, qty, before, after, price or 0, project, move_date,
+             st.session_state.get("user", "system")))
+        _log(conn, "STOCK_ADD" if kind == "ADD" else "STOCK_DEDUCT", item_id, name,
+             f"{'+' if kind == 'ADD' else '-'}{qty:,} {unit} ({before:,} → {after:,}) · Project: {project or '-'} · Date: {move_date}")
+    st.cache_data.clear()
+    return name, unit, after
+
+
+def get_movements():
+    df = pd.read_sql("SELECT * FROM stock_movements ORDER BY movement_date DESC, id DESC", get_engine())
+    if not df.empty:
+        df["movement_date"] = pd.to_datetime(df["movement_date"])
+        df["amount"] = df["quantity"] * df["unit_price"].fillna(0)
+    return df
+
+
 # --- 3b. SECURITY: accounts, login, lockout, activity log ---
 REMEMBER_DAYS = 30        # a device stays signed in this long (renewed each time it is used)
 COOKIE_NAME = "dictnir_session"
@@ -629,7 +686,7 @@ ACTION_LABELS = {
     "LOGIN": "Signed in", "LOGOUT": "Signed out", "SESSION_EXPIRED": "Session expired",
     "LOGIN_FAILED": "Failed sign-in", "LOGIN_BLOCKED": "Blocked (locked account)",
     "ADD_ITEM": "Added item", "UPDATE_STOCK": "Changed stock", "DELETE_ITEM": "Deleted item",
-    "EDIT_ITEM": "Edited item", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
+    "EDIT_ITEM": "Edited item", "STOCK_ADD": "Added stock", "STOCK_DEDUCT": "Deducted stock", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
 }
 
 
@@ -956,7 +1013,7 @@ def _rows(df, money_cols):
     return out
 
 
-def build_excel(title, subtitle, df, money_cols, total=None):
+def build_excel(title, subtitle, df, money_cols, total=None, total_label="TOTAL BALANCE"):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -981,7 +1038,7 @@ def build_excel(title, subtitle, df, money_cols, total=None):
                 cell.number_format = '"₱"#,##0.00'
     if total is not None:
         r = 4 + len(df) + 2
-        ws.cell(row=r, column=max(n - 1, 1), value="TOTAL BALANCE").font = Font(bold=True)
+        ws.cell(row=r, column=max(n - 1, 1), value=total_label).font = Font(bold=True)
         t = ws.cell(row=r, column=n, value=float(total))
         t.font = Font(bold=True)
         t.number_format = '"₱"#,##0.00'
@@ -994,7 +1051,7 @@ def build_excel(title, subtitle, df, money_cols, total=None):
     return buf.getvalue()
 
 
-def build_word(title, subtitle, df, money_cols, total=None):
+def build_word(title, subtitle, df, money_cols, total=None, total_label="TOTAL BALANCE"):
     from docx import Document
     from docx.enum.section import WD_ORIENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -1041,7 +1098,7 @@ def build_word(title, subtitle, df, money_cols, total=None):
     if total is not None:
         par = doc.add_paragraph()
         par.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run = par.add_run(f"TOTAL BALANCE: ₱{total:,.2f}")
+        run = par.add_run(f"{total_label}: ₱{total:,.2f}")
         run.bold = True
         run.font.size = Pt(12)
     buf = io.BytesIO()
@@ -1049,7 +1106,7 @@ def build_word(title, subtitle, df, money_cols, total=None):
     return buf.getvalue()
 
 
-def build_pdf(title, subtitle, df, money_cols, total=None):
+def build_pdf(title, subtitle, df, money_cols, total=None, total_label="TOTAL BALANCE"):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -1082,7 +1139,7 @@ def build_pdf(title, subtitle, df, money_cols, total=None):
     story = [Paragraph(f"<b>{t(title)}</b>", ParagraphStyle("t", parent=ss["Title"], alignment=0, fontSize=18)),
              Paragraph(t(subtitle), ss["Normal"]), Spacer(1, 10), tbl]
     if total is not None:
-        story += [Spacer(1, 8), Paragraph(f"<b>TOTAL BALANCE: PHP {total:,.2f}</b>",
+        story += [Spacer(1, 8), Paragraph(f"<b>{t(total_label)}: PHP {total:,.2f}</b>",
                                           ParagraphStyle("tt", parent=ss["Normal"], alignment=2, fontSize=11))]
 
     def footer(canvas, d):
@@ -1103,7 +1160,7 @@ def report_subtitle(extra=""):
     return f"DICT Negros Island Region · Generated {now} (PH time) by {who}" + (f" · {extra}" if extra else "")
 
 
-def export_menu(title, subtitle, df, money_cols, total=None, base="report", key="exp"):
+def export_menu(title, subtitle, df, money_cols, total=None, base="report", key="exp", total_label="TOTAL BALANCE"):
     """Popover with Excel / PDF / Word downloads. Files are built only when you click a button."""
     stamp = datetime.now(PH_TZ).strftime("%Y%m%d-%H%M")
     try:
@@ -1124,7 +1181,7 @@ def export_menu(title, subtitle, df, money_cols, total=None, base="report", key=
                 pkg = {"docx": "python-docx"}.get(module, module)
                 st.caption(f"{label}: add `{pkg}` to requirements.txt")
                 continue
-            make = partial(builder, title, subtitle, df, money_cols, total)
+            make = partial(builder, title, subtitle, df, money_cols, total, total_label)
             fname, k = f"{base}-{stamp}.{ext}", f"{key}_{ext}"
             try:
                 st.download_button(label, data=make, file_name=fname, mime=mime, key=k,
@@ -1270,6 +1327,95 @@ def donut_panel(agg):
                     unsafe_allow_html=True)
     with tab_data:
         data_view(agg, "donut")
+
+
+def _dismiss_dialog():
+    st.session_state["tbl_ver"] = st.session_state.get("tbl_ver", 0) + 1  # new table key = selection cleared
+
+
+def _stock_dialog_body(item_id, name, unit, qty):
+    ver = st.session_state.get("tbl_ver", 0)
+    k = f"{item_id}_{ver}"
+    today = datetime.now(PH_TZ).date()
+    st.markdown(f"<div class='section-title' style='font-size:24px'>{html.escape(str(name))}</div>",
+                unsafe_allow_html=True)
+    st.caption(f"Current stock: {qty:,} {unit}")
+    mode = st.radio("Action", ["Add stock", "Deduct stock"], horizontal=True, key=f"dlg_mode_{k}")
+    deduct = mode == "Deduct stock"
+    if deduct and qty <= 0:
+        st.warning("There is no stock left to deduct.")
+    amount = st.number_input(f"Quantity to {'deduct' if deduct else 'add'} ({unit})", min_value=1,
+                             max_value=(max(qty, 1) if deduct else None), value=1, step=1, key=f"dlg_amt_{k}")
+    new_total = qty - int(amount) if deduct else qty + int(amount)
+    st.markdown(f"**New total:** {new_total:,} {unit}")
+    project = st.text_input("Project", placeholder="Project name / purpose, and who received it", key=f"dlg_proj_{k}")
+    move_date = st.date_input("Date", value=today, max_value=today, key=f"dlg_date_{k}")
+    st.caption(f"Recorded by: {st.session_state.get('full_name', '')} (@{st.session_state.get('user', '')})")
+
+    if st.button("Save", use_container_width=True, key=f"dlg_save_{k}", disabled=(deduct and qty <= 0)):
+        if deduct and not project.strip():
+            st.error("Please enter the project for a deduction.")
+            return
+        try:
+            n, u, after = record_movement(item_id, "DEDUCT" if deduct else "ADD", int(amount),
+                                          project.strip(), move_date)
+        except ValueError as e:
+            st.error(str(e))
+            return
+        flash("success", f"{'Deducted' if deduct else 'Added'} {int(amount):,} {u} "
+                         f"{'from' if deduct else 'to'} {n}. New total: {after:,} {u}.")
+        _dismiss_dialog()
+        st.rerun()
+
+
+try:
+    stock_dialog = st.dialog("Add / deduct stock", on_dismiss=_dismiss_dialog)(_stock_dialog_body)
+except TypeError:  # older Streamlit without on_dismiss
+    stock_dialog = st.dialog("Add / deduct stock")(_stock_dialog_body)
+
+
+def movement_report(sub, kind, label, filters_text):
+    if sub.empty:
+        st.info(f"No {label.lower()} records for these filters.")
+        return
+    total_amt = float(sub["amount"].sum())
+    per_unit = sub.groupby("unit")["quantity"].sum()
+    qty_text = " · ".join(f"{int(q):,} {u}" for u, q in per_unit.items())
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_card(f"Total {label.lower()} (value)", f"₱{total_amt:,.2f}", f"{len(sub)} record(s)",
+                    "badge-red" if kind == "DEDUCT" else "badge-green")
+    with c2:
+        metric_card(f"Total quantity {label.lower()}", qty_text, "all items in this view", "badge-orange")
+    with c3:
+        metric_card("Items involved", f"{sub['item_name'].nunique()}", f"{sub['done_by'].nunique()} user(s)",
+                    "badge-orange")
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    show = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"),
+                      change=sub["balance_before"].astype(str) + " → " + sub["balance_after"].astype(str))
+    st.dataframe(show[["date", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]],
+                 use_container_width=True, hide_index=True, column_config={
+                     "date": "Date", "item_name": "Item", "quantity": "Qty", "unit": "Unit",
+                     "project": "Project", "done_by": "Done by", "change": "Stock before → after",
+                     "amount": st.column_config.NumberColumn("Value", format="₱%.2f")})
+    with st.expander("Summary per item"):
+        summ = (sub.groupby(["item_name", "unit"], as_index=False)
+                   .agg(records=("id", "count"), quantity=("quantity", "sum"), amount=("amount", "sum"))
+                   .sort_values("amount", ascending=False))
+        st.dataframe(summ, use_container_width=True, hide_index=True, column_config={
+            "item_name": "Item", "unit": "Unit", "records": "Records", "quantity": "Total qty",
+            "amount": st.column_config.NumberColumn("Total value", format="₱%.2f")})
+
+    exp = sub[["movement_date", "item_name", "quantity", "unit", "project", "done_by",
+               "balance_before", "balance_after", "unit_price", "amount"]].copy()
+    exp["movement_date"] = exp["movement_date"].dt.strftime("%b %d, %Y")
+    exp.insert(0, "No.", range(1, len(exp) + 1))
+    exp.columns = ["No.", "Date", "Item", "Qty", "Unit", "Project", "Done by", "Before", "After",
+                   "Unit Price (₱)", "Value (₱)"]
+    export_menu(f"Stock {label} Report", report_subtitle(filters_text), exp, {"Unit Price (₱)", "Value (₱)"},
+                total=total_amt, base=f"stock-{label.lower()}", key=f"exp_mv_{kind}",
+                total_label=f"TOTAL {label.upper()}")
 
 
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
@@ -1439,44 +1585,28 @@ def main():
     # ================= RESTOCK =================
     elif choice == "Restock / Adjust":
         page_header("Restock / Adjust Stock",
-                    "Correct mistakes in the table, or update quantities when shipments arrive or items are issued.")
+                    "Click an item in the table to add or deduct its stock.")
         show_flash()
         if df.empty:
             st.info("No items available to update.")
         else:
-            st.markdown("<div class='section-sub'>Made a typo? Click any cell to correct it, then press "
-                        "<b>Save changes</b>.</div>", unsafe_allow_html=True)
-            cols = ["id", "quantity", "unit", "name", "description", "category", "price", "min_threshold", "amount"]
-            unit_opts = UNITS + sorted(set(df["unit"]) - set(UNITS))
-            cat_opts = CATEGORIES + sorted(set(df["category"].dropna()) - set(CATEGORIES))
-            ver = st.session_state.get("editor_v", 0)
-            with _form("edit_items_form"):
-                edited = st.data_editor(
-                    df[cols], key=f"stock_editor_{ver}", hide_index=True, use_container_width=True,
-                    num_rows="fixed", disabled=["id", "amount"],
-                    column_config={
-                        "id": "ID",
-                        "quantity": st.column_config.NumberColumn("Qty", min_value=0, step=1, format="%d"),
-                        "unit": st.column_config.SelectboxColumn("Unit", options=unit_opts, required=True),
-                        "name": st.column_config.TextColumn("Item", required=True),
-                        "description": st.column_config.TextColumn("Description"),
-                        "category": st.column_config.SelectboxColumn("Category", options=cat_opts),
-                        "price": st.column_config.NumberColumn("Unit Price", min_value=0.0, step=0.01, format="₱%.2f"),
-                        "min_threshold": st.column_config.NumberColumn("Min", min_value=0, step=1, format="%d"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
-                    })
-                saved = st.form_submit_button("Save changes", use_container_width=True)
-            if saved:
-                errs = validate_edits(edited)
-                if errs:
-                    st.error("\n\n".join(errs))
-                else:
-                    count = save_item_edits(df, edited)
-                    st.session_state["editor_v"] = ver + 1
-                    flash("success" if count else "info",
-                          f"Saved changes to {count} item(s)." if count else "No changes to save.")
-                    st.rerun()
+            ver = st.session_state.get("tbl_ver", 0)
+            event = st.dataframe(
+                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
+                key=f"stock_tbl_{ver}", hide_index=True, use_container_width=True,
+                on_select="rerun", selection_mode=["single-row", "single-cell"],
+                column_config={
+                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
+                    "description": "Description", "category": "Category",
+                    "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+                    "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
+                })
             total_bar(df)
+            sel = event.selection
+            pos = sel.cells[0][0] if sel.cells else (sel.rows[0] if sel.rows else None)
+            if pos is not None:
+                r = df.iloc[pos]
+                stock_dialog(int(r["id"]), r["name"], r["unit"], int(r["quantity"] or 0))
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
@@ -1506,7 +1636,7 @@ def main():
     elif choice == "Security":
         page_header("Security", "Accounts and a record of who did what in this system.")
         show_flash()
-        tab_log, tab_users, tab_pw = st.tabs(["Activity Log", "User Accounts", "My Password"])
+        tab_log, tab_moves, tab_users, tab_pw = st.tabs(["Activity Log", "Stock Movements", "User Accounts", "My Password"])
 
         with tab_log:
             act = get_activity()
@@ -1528,6 +1658,35 @@ def main():
                                               "item_name": "Item", "details": "Details"}).fillna("")
                 export_menu("Activity Log", report_subtitle(), exp_log, set(), None,
                             base="activity-log", key="exp_log")
+
+        with tab_moves:
+            mv = get_movements()
+            if mv.empty:
+                st.info("No stock movements yet. Add or deduct stock from the Restock / Adjust page "
+                        "and every movement will be recorded here.")
+            else:
+                f1, f2, f3 = st.columns(3)
+                item_f = f1.selectbox("Item", ["All"] + sorted(mv["item_name"].dropna().unique().tolist()), key="mv_item")
+                user_f = f2.selectbox("Done by", ["All"] + sorted(mv["done_by"].dropna().unique().tolist()), key="mv_user")
+                lo, hi = mv["movement_date"].min().date(), mv["movement_date"].max().date()
+                rng = f3.date_input("Date range", value=(lo, hi), min_value=lo, max_value=max(hi, datetime.now(PH_TZ).date()),
+                                    key="mv_range")
+                view_mv = mv
+                notes = []
+                if item_f != "All":
+                    view_mv = view_mv[view_mv["item_name"] == item_f]
+                    notes.append(f"Item: {item_f}")
+                if user_f != "All":
+                    view_mv = view_mv[view_mv["done_by"] == user_f]
+                    notes.append(f"By: {user_f}")
+                if isinstance(rng, (list, tuple)) and len(rng) == 2:
+                    view_mv = view_mv[(view_mv["movement_date"].dt.date >= rng[0]) & (view_mv["movement_date"].dt.date <= rng[1])]
+                    notes.append(f"{rng[0]:%b %d, %Y} to {rng[1]:%b %d, %Y}")
+                tab_d, tab_a = st.tabs(["Deductions", "Additions"])
+                with tab_d:
+                    movement_report(view_mv[view_mv["movement_type"] == "DEDUCT"], "DEDUCT", "Deducted", " · ".join(notes))
+                with tab_a:
+                    movement_report(view_mv[view_mv["movement_type"] == "ADD"], "ADD", "Added", " · ".join(notes))
 
         with tab_users:
             users = list_users()
