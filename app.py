@@ -559,6 +559,7 @@ CATEGORIES = ["Hardware / Peripherals", "Office Supplies", "Networking Equipment
 ITEM_CODES = ["BDPR", "SNPN", "BLPN", "SN", "MFH", "MFP", "MFW", "SCS", "FLD", "EVP", "CAL", "PHPS", "TPD", "TPE",
               "FBH", "RDBK", "SRR", "SWE", "SRW", "PNR", "TSE", "ETOH", "INK", "FBCR", "LQDT", "DTPR", "ADS", "RGS",
               "TSBG", "WGW", "BMDR", "GSCS", "SPB", "BRM", "DSTP", "INKR", "MUAD", "FRMP", "HDSZ", "LQHS", "MRRR"]
+STOCK_NUMBERS = [f"{i:03d}" for i in range(1, 100)]        # 001 ... 099
 SERIES_NUMBERS = [f"{i:02d}" for i in range(1, 11)]          # 01 ... 10
 AUTO_SERIES = "Auto (next number)"
 FIELD_LABELS = {"name": "Item", "category": "Category", "quantity": "Qty", "unit": "Unit",
@@ -1756,7 +1757,8 @@ def main():
         show_flash()
         with st.form("add_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
-            stock_no = c1.text_input("Stock Number", placeholder="e.g., 001")
+            stock_no = c1.selectbox("Stock Number", STOCK_NUMBERS, index=None,
+                                    placeholder="Type or choose") or ""
             try:   # type a letter to filter the list; a code that is not in the list can still be typed in
                 code = c2.selectbox("Code", ITEM_CODES, index=None, placeholder="Type or choose a code",
                                     accept_new_options=True)
@@ -1800,7 +1802,8 @@ def main():
                         hide_index=True, use_container_width=True, num_rows="fixed",
                         disabled=["id", "item_desc"], key=f"assign_{len(missing)}",
                         column_config={"id": "ID", "item_desc": "Item Description",
-                                       "stock_number": st.column_config.TextColumn("Stock Number"),
+                                       "stock_number": st.column_config.SelectboxColumn(
+                                           "Stock Number", options=STOCK_NUMBERS + sorted(set(df["stock_number"]) - set(STOCK_NUMBERS) - {""})),
                                        "item_code": st.column_config.SelectboxColumn(
                                            "Code", options=ITEM_CODES + sorted(set(df["item_code"]) - set(ITEM_CODES) - {""})),
                                        "series": st.column_config.SelectboxColumn(
