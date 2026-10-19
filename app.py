@@ -475,7 +475,7 @@ def get_engine():
     return _make_engine(db_url)
 
 
-SCHEMA_VERSION = 5  # bump this whenever tables/columns change so setup re-runs
+SCHEMA_VERSION = 6  # bump this whenever tables/columns change so setup re-runs
 
 
 @st.cache_resource(show_spinner=False)
@@ -498,6 +498,12 @@ def init_db(schema_version=None):
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Pcs.'")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS min_threshold INTEGER DEFAULT 5")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS stock_number TEXT")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS item_code TEXT")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS series TEXT")
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS items_code_uq ON items (stock_number, item_code, series) "
+            "WHERE stock_number IS NOT NULL AND item_code IS NOT NULL AND series IS NOT NULL")
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
@@ -544,6 +550,7 @@ def init_db(schema_version=None):
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        conn.exec_driver_sql("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS item_code TEXT")
     return True
 
 
@@ -568,15 +575,30 @@ def log_activity(action, **kw):
         _log(conn, action, **kw)
 
 
-def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", description=""):
+def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", description="",
+             stock_number=None, item_code=None, series=None):
+    """Returns the full code (e.g. 001-BDPR-01). Series is numbered automatically when left empty."""
     with get_engine().begin() as conn:
+        if stock_number and item_code:
+            used = [r[0] for r in conn.exec_driver_sql(
+                "SELECT series FROM items WHERE stock_number = %s AND item_code = %s",
+                (stock_number, item_code)).fetchall() if r[0]]
+            if not series:
+                nums = [int(x) for x in used if str(x).isdigit()]
+                series = f"{(max(nums) + 1 if nums else 1):02d}"
+            elif series in used:
+                raise ValueError(f"The code {stock_number}-{item_code}-{series} already exists.")
+        full = f"{stock_number}-{item_code}-{series}" if (stock_number and item_code and series) else ""
         new_id = conn.exec_driver_sql(
-            "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (name, category, quantity, price, min_threshold, unit, description),
+            "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description, "
+            "stock_number, item_code, series) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, category, quantity, price, min_threshold, unit, description,
+             stock_number or None, item_code or None, series or None),
         ).scalar()
-        _log(conn, "ADD_ITEM", new_id, name, f"{quantity} {unit} @ ₱{price:,.2f} · {category}")
+        _log(conn, "ADD_ITEM", new_id, name,
+             f"{full + ' · ' if full else ''}{quantity} {unit} @ ₱{price:,.2f} · {category}")
     st.cache_data.clear()
+    return full
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -586,6 +608,11 @@ def get_inventory():
     df["unit"] = df["unit"].fillna("Pcs.")
     df["description"] = df["description"].fillna("")
     df["amount"] = df["quantity"] * df["price"]
+    for c in ("stock_number", "item_code", "series"):
+        df[c] = df[c].fillna("")
+    df["full_code"] = [f"{a}-{b}-{c}" if (a and b and c) else ""
+                       for a, b, c in zip(df["stock_number"], df["item_code"], df["series"])]
+    df["item_desc"] = [n + (", " + d if d else "") for n, d in zip(df["name"], df["description"])]
     return df
 
 
@@ -658,10 +685,13 @@ def record_movement(item_id, kind, qty, project, move_date):
     """Add or deduct stock AND keep a permanent record (who, when, project, balance before/after)."""
     with get_engine().begin() as conn:
         row = conn.exec_driver_sql(
-            "SELECT name, unit, quantity, price FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
+            "SELECT name, unit, quantity, price, description, stock_number, item_code, series "
+            "FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
         if not row:
             raise ValueError("This item no longer exists.")
-        name, unit, before, price = row
+        name, unit, before, price, desc, sn, ic, sr = row
+        full_code = f"{sn}-{ic}-{sr}" if (sn and ic and sr) else ""
+        name = name + (", " + desc if desc else "")
         before = before or 0
         after = before + qty if kind == "ADD" else before - qty
         if after < 0:
@@ -669,10 +699,10 @@ def record_movement(item_id, kind, qty, project, move_date):
         conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (after, item_id))
         conn.exec_driver_sql(
             "INSERT INTO stock_movements (item_id, item_name, unit, movement_type, quantity, balance_before, "
-            "balance_after, unit_price, project, movement_date, done_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "balance_after, unit_price, project, movement_date, done_by, item_code) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (item_id, name, unit, kind, qty, before, after, price or 0, project, move_date,
-             st.session_state.get("user", "system")))
+             st.session_state.get("user", "system"), full_code))
         _log(conn, "STOCK_ADD" if kind == "ADD" else "STOCK_DEDUCT", item_id, name,
              f"{'+' if kind == 'ADD' else '-'}{qty:,} {unit} ({before:,} → {after:,}) · Project: {project or '-'} · Date: {move_date}")
     st.cache_data.clear()
@@ -685,7 +715,51 @@ def get_movements():
     if not df.empty:
         df["movement_date"] = pd.to_datetime(df["movement_date"])
         df["amount"] = df["quantity"] * df["unit_price"].fillna(0)
+        df["item_code"] = df["item_code"].fillna("")
     return df
+
+
+CODE_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
+
+
+def normalize_code(stock, code, series=""):
+    stock, code, series = stock.strip(), code.strip().upper(), series.strip()
+    if stock.isdigit():
+        stock = stock.zfill(3)
+    if series.isdigit():
+        series = series.zfill(2)
+    for label, v in (("Stock Number", stock), ("Code", code), ("Series", series)):
+        if v and not CODE_RE.match(v):
+            raise ValueError(f"{label} may only contain letters and numbers (up to 10 characters).")
+    return stock, code, series
+
+
+def assign_codes(edited):
+    """Give a Stock Number / Code / Series to items that were created before codes existed."""
+    rows, seen = [], set()
+    for _, r in edited.iterrows():
+        vals = [str(_clean(r[c])).strip() for c in ("stock_number", "item_code", "series")]
+        if not any(vals):
+            continue
+        if not all(vals):
+            raise ValueError(f"Item #{int(r['id'])}: fill in Stock Number, Code and Series (or leave all three empty).")
+        key = normalize_code(*vals)
+        if key in seen:
+            raise ValueError(f"The code {'-'.join(key)} is used twice in this list.")
+        seen.add(key)
+        rows.append((int(r["id"]),) + key)
+    with get_engine().begin() as conn:
+        for item_id, a, b, c in rows:
+            if conn.exec_driver_sql("SELECT 1 FROM items WHERE stock_number=%s AND item_code=%s AND series=%s AND id<>%s",
+                                    (a, b, c, item_id)).fetchone():
+                raise ValueError(f"The code {a}-{b}-{c} already belongs to another item.")
+            conn.exec_driver_sql("UPDATE items SET stock_number=%s, item_code=%s, series=%s WHERE id=%s",
+                                 (a, b, c, item_id))
+            nm = conn.exec_driver_sql("SELECT name FROM items WHERE id=%s", (item_id,)).scalar()
+            _log(conn, "EDIT_ITEM", item_id, nm, f"Assigned code {a}-{b}-{c}")
+    if rows:
+        st.cache_data.clear()
+    return len(rows)
 
 
 # --- 3b. SECURITY: accounts, login, lockout, activity log ---
@@ -1263,24 +1337,29 @@ def inventory_records(df, search_query=""):
     st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
     f1, f2 = st.columns([2, 1])
     with f1:
-        name_filter = st.text_input("Filter by name", search_query, placeholder="Item name")
+        name_filter = st.text_input("Search item or code", search_query, placeholder="Item description or code")
     with f2:
         cats = ["All"] + list(df["category"].dropna().unique())
         cat_filter = st.selectbox("Category", cats)
 
     view = df
     if name_filter:
-        view = view[view["name"].str.contains(name_filter, case=False, na=False)]
+        view = view[view["item_desc"].str.contains(name_filter, case=False, na=False, regex=False)
+                    | view["full_code"].str.contains(name_filter, case=False, na=False, regex=False)]
     if cat_filter != "All":
         view = view[view["category"] == cat_filter]
     view = view.assign(status=low_mask.loc[view.index].map({True: "🔴 Low stock", False: "🟢 In stock"}))
-    view = view[["id", "quantity", "unit", "name", "description", "category",
-                 "price", "amount", "min_threshold", "status"]]
+    view = view[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
+                 "category", "price", "amount", "min_threshold", "status"]]
     st.dataframe(
         view, use_container_width=True, hide_index=True,
         column_config={
-            "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-            "description": "Description", "category": "Category",
+            "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
+        "item_code": st.column_config.TextColumn("Code", width="small"),
+        "series": st.column_config.TextColumn("Series", width="small"),
+        "full_code": st.column_config.TextColumn("Code", width="medium"),
+        "item_desc": st.column_config.TextColumn("Item Description", width="large"),
+            "quantity": "Qty", "unit": "Unit", "category": "Category",
             "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
             "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
             "min_threshold": "Min", "status": "Status",
@@ -1288,9 +1367,11 @@ def inventory_records(df, search_query=""):
     )
     total_bar(view)
 
-    exp = view.reset_index(drop=True)[["quantity", "unit", "name", "description", "category", "price", "amount"]]
+    exp = view.reset_index(drop=True)[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity",
+                                       "unit", "category", "price", "amount"]]
     exp.insert(0, "No.", range(1, len(exp) + 1))
-    exp.columns = ["No.", "Qty", "Unit", "Item", "Description", "Category", "Unit Price (₱)", "Amount (₱)"]
+    exp.columns = ["No.", "Stock Number", "Code", "Series", "Code", "Item Description", "Qty", "Unit", "Category",
+                   "Unit Price (₱)", "Amount (₱)"]
     flt = " · ".join(x for x in [f"Item: {name_filter}" if name_filter else "",
                                   f"Category: {cat_filter}" if cat_filter != "All" else ""] if x)
     export_menu("Inventory Report", report_subtitle(flt), exp, {"Unit Price (₱)", "Amount (₱)"},
@@ -1347,13 +1428,14 @@ def _dismiss_dialog():
     st.session_state["tbl_ver"] = st.session_state.get("tbl_ver", 0) + 1  # new table key = selection cleared
 
 
-def _stock_dialog_body(item_id, name, unit, qty):
+def _stock_dialog_body(item_id, name, unit, qty, code=""):
     ver = st.session_state.get("tbl_ver", 0)
     k = f"{item_id}_{ver}"
     today = datetime.now(PH_TZ).date()
     st.markdown(f"<div class='section-title' style='font-size:24px'>{html.escape(str(name))}</div>",
                 unsafe_allow_html=True)
-    st.caption(f"Current stock: {qty:,} {unit}")
+    code_txt = f"Code {code} · " if code else ""
+    st.caption(f"{code_txt}Current stock: {qty:,} {unit}")
     mode = st.radio("Action", ["Add stock", "Deduct stock"], horizontal=True, key=f"dlg_mode_{k}")
     deduct = mode == "Deduct stock"
     if deduct and qty <= 0:
@@ -1422,11 +1504,11 @@ def movement_report(sub, kind, label, filters_text):
     show = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"),
                       type=sub["movement_type"].map(type_names),
                       change=sub["balance_before"].astype(str) + " → " + sub["balance_after"].astype(str))
-    cols = ["date", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]
+    cols = ["date", "item_code", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]
     if is_all:
         cols.insert(1, "type")
     st.dataframe(show[cols], use_container_width=True, hide_index=True, column_config={
-        "date": "Date", "type": "Type", "item_name": "Item", "quantity": "Qty", "unit": "Unit",
+        "date": "Date", "type": "Type", "item_code": "Code", "item_name": "Item Description", "quantity": "Qty", "unit": "Unit",
         "project": "Project", "done_by": "Done by", "change": "Stock before → after",
         "amount": st.column_config.NumberColumn("Value", format="₱%.2f")})
 
@@ -1443,9 +1525,9 @@ def movement_report(sub, kind, label, filters_text):
             "deducted": "Total deducted", "amount": st.column_config.NumberColumn("Total value", format="₱%.2f")})
 
     exp = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"), type=sub["movement_type"].map(type_names))
-    ecols = ["date", "item_name", "quantity", "unit", "project", "done_by", "balance_before", "balance_after",
+    ecols = ["date", "item_code", "item_name", "quantity", "unit", "project", "done_by", "balance_before", "balance_after",
              "unit_price", "amount"]
-    enames = ["Date", "Item", "Qty", "Unit", "Project", "Done by", "Before", "After", "Unit Price (₱)", "Value (₱)"]
+    enames = ["Date", "Code", "Item Description", "Qty", "Unit", "Project", "Done by", "Before", "After", "Unit Price (₱)", "Value (₱)"]
     if is_all:
         ecols.insert(1, "type")
         enames.insert(1, "Type")
@@ -1646,11 +1728,11 @@ def main():
         st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
         top = df.sort_values("value", ascending=False).head(5).copy()
         top.insert(0, "Rank", [f"Rank {i}" for i in range(1, len(top) + 1)])
-        top = top[["Rank", "name", "id", "category", "quantity", "unit", "value"]]
+        top = top[["Rank", "full_code", "item_desc", "category", "quantity", "unit", "value"]]
         st.dataframe(
             top, use_container_width=True, hide_index=True,
             column_config={
-                "name": "Product", "id": "Item ID", "category": "Category",
+                "full_code": "Code", "item_desc": "Item Description", "category": "Category",
                 "quantity": "Qty", "unit": "Unit",
                 "value": st.column_config.NumberColumn("Value", format="₱%.2f"),
             },
@@ -1664,29 +1746,57 @@ def main():
     elif choice == "Add Item":
         page_header("Register New Item",
                     "Add office equipment, hardware, or consumable supplies to the inventory.")
+        show_flash()
         with st.form("add_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            stock_no = c1.text_input("Stock Number", placeholder="e.g., 001")
+            code = c2.text_input("Code", placeholder="e.g., BDPR")
+            series = c3.text_input("Series", placeholder="leave empty = next number")
+            name = st.text_input("Item description", placeholder="e.g., BOND PAPER, FOLIO, 70 gsm")
             col1, col2 = st.columns(2)
             with col1:
-                name = st.text_input("Item name", placeholder="e.g., Copy Paper A4")
-                category = st.selectbox("Category", ["Hardware / Peripherals", "Office Supplies",
-                                                      "Networking Equipment", "Furniture & Fixtures",
-                                                      "ICT Equipment"])
+                category = st.selectbox("Category", CATEGORIES)
                 quantity = st.number_input("Initial quantity", min_value=0, step=1)
-                description = st.text_area("Description (optional)", height=100,
-                                           placeholder="e.g., Legal size, 70gsm, 500 sheets per ream")
+                price = st.number_input("Unit price (₱)", min_value=0.0, format="%.2f")
             with col2:
                 unit = st.selectbox("Unit", UNITS)
                 custom_unit = st.text_input("Other unit (optional)", placeholder="Type a unit not in the list")
-                price = st.number_input("Unit price (₱)", min_value=0.0, format="%.2f")
                 min_threshold = st.number_input("Low stock threshold", min_value=1, value=5, step=1)
+            description = st.text_area("More details (optional)", height=80,
+                                       placeholder="Shown after the item description, e.g., 500 sheets per ream")
             if st.form_submit_button("Save item", use_container_width=True):
-                if not name.strip():
-                    st.error("Item name is required.")
-                else:
-                    final_unit = custom_unit.strip() or unit
-                    add_item(name.strip(), category, quantity, price, min_threshold,
-                             final_unit, description.strip())
-                    st.success(f"Saved **{name}** to the inventory.")
+                try:
+                    if not name.strip():
+                        raise ValueError("Item description is required.")
+                    if not stock_no.strip() or not code.strip():
+                        raise ValueError("Stock Number and Code are required.")
+                    sn, ic, sr = normalize_code(stock_no, code, series)
+                    full = add_item(name.strip(), category, quantity, price, min_threshold,
+                                    custom_unit.strip() or unit, description.strip(), sn, ic, sr or None)
+                    st.success(f"Saved **{name.strip()}** with code **{full}**.")
+                except ValueError as e:
+                    st.error(str(e))
+
+        missing = df[df["full_code"] == ""] if not df.empty else df
+        if len(missing):
+            with st.expander(f"Assign codes to existing items ({len(missing)} without a code)"):
+                st.caption("These items were added before codes existed. Fill in Stock Number, Code and Series.")
+                with _form("assign_codes_form"):
+                    edited = st.data_editor(
+                        missing[["id", "item_desc", "stock_number", "item_code", "series"]],
+                        hide_index=True, use_container_width=True, num_rows="fixed",
+                        disabled=["id", "item_desc"], key=f"assign_{len(missing)}",
+                        column_config={"id": "ID", "item_desc": "Item Description",
+                                       "stock_number": st.column_config.TextColumn("Stock Number"),
+                                       "item_code": st.column_config.TextColumn("Code"),
+                                       "series": st.column_config.TextColumn("Series")})
+                    if st.form_submit_button("Save codes", use_container_width=True):
+                        try:
+                            n = assign_codes(edited)
+                            flash("success" if n else "info", f"Assigned codes to {n} item(s)." if n else "Nothing to save.")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(str(e))
 
     # ================= RESTOCK =================
     elif choice == "Restock / Adjust":
@@ -1704,13 +1814,14 @@ def main():
                 cat = st.selectbox("Category", cat_opts, key="rs_cat",
                                    format_func=lambda c: f"{c} ({counts.get(c, 0)})")
             with f2:
-                q = st.text_input("Search item", placeholder="Search item name...", key="rs_q")
+                q = st.text_input("Search item or code", placeholder="Search item name...", key="rs_q")
 
             shown = df
             if cat != "All":
                 shown = shown[shown["category"] == cat]
             if q:
-                shown = shown[shown["name"].str.contains(q, case=False, na=False)]
+                shown = shown[shown["item_desc"].str.contains(q, case=False, na=False, regex=False)
+                              | shown["full_code"].str.contains(q, case=False, na=False, regex=False)]
             shown = shown.reset_index(drop=True)
 
             if shown.empty:
@@ -1719,12 +1830,17 @@ def main():
                 ver = st.session_state.get("tbl_ver", 0)
                 sig = hashlib.md5(f"{cat}|{q}".encode()).hexdigest()[:8]   # new filter = fresh selection
                 event = st.dataframe(
-                    shown[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
+                    shown[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
+                           "category", "price", "amount"]],
                     key=f"stock_tbl_{ver}_{sig}", hide_index=True, use_container_width=True,
                     on_select="rerun", selection_mode=["single-row", "single-cell"],
                     column_config={
-                        "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                        "description": "Description", "category": "Category",
+                        "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
+        "item_code": st.column_config.TextColumn("Code", width="small"),
+        "series": st.column_config.TextColumn("Series", width="small"),
+        "full_code": st.column_config.TextColumn("Code", width="medium"),
+        "item_desc": st.column_config.TextColumn("Item Description", width="large"),
+                        "quantity": "Qty", "unit": "Unit", "category": "Category",
                         "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
                         "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
                     })
@@ -1733,7 +1849,7 @@ def main():
                 pos = sel.cells[0][0] if sel.cells else (sel.rows[0] if sel.rows else None)
                 if pos is not None:
                     r = shown.iloc[pos]
-                    stock_dialog(int(r["id"]), r["name"], r["unit"], int(r["quantity"] or 0))
+                    stock_dialog(int(r["id"]), r["item_desc"], r["unit"], int(r["quantity"] or 0), r["full_code"])
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
@@ -1743,21 +1859,27 @@ def main():
             st.info("No items available to delete.")
         else:
             st.dataframe(
-                df[["id", "quantity", "unit", "name", "description", "category", "price", "amount"]],
+                df[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
+                    "category", "price", "amount"]],
                 use_container_width=True, hide_index=True,
                 column_config={
-                    "id": "ID", "quantity": "Qty", "unit": "Unit", "name": "Item",
-                    "description": "Description", "category": "Category",
+                    "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
+        "item_code": st.column_config.TextColumn("Code", width="small"),
+        "series": st.column_config.TextColumn("Series", width="small"),
+        "full_code": st.column_config.TextColumn("Code", width="medium"),
+        "item_desc": st.column_config.TextColumn("Item Description", width="large"),
+                    "quantity": "Qty", "unit": "Unit", "category": "Category",
                     "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
                     "amount": st.column_config.NumberColumn("Amount", format="₱%.2f"),
                 },
             )
             total_bar(df)
-            item_id = st.selectbox("Select item ID to delete", df["id"].tolist())
+            labels = {int(r.id): f"{r.full_code or 'no code'} · {r.item_desc}" for r in df.itertuples()}
+            item_id = st.selectbox("Select the item to delete", list(labels), format_func=labels.get)
             selected = df[df["id"] == item_id].iloc[0]
-            st.warning(f"You are about to delete **{selected['name']}**. This cannot be undone.")
+            st.warning(f"You are about to delete **{selected['item_desc']}**. This cannot be undone.")
             st.button("Delete item", use_container_width=True, on_click=do_delete,
-                      args=(int(item_id), selected["name"]))
+                      args=(int(item_id), selected["item_desc"]))
 
     # ================= SECURITY =================
     elif choice == "Security":
