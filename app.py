@@ -556,6 +556,11 @@ def init_db(schema_version=None):
 
 CATEGORIES = ["Hardware / Peripherals", "Office Supplies", "Networking Equipment",
               "Furniture & Fixtures", "ICT Equipment"]
+ITEM_CODES = ["BDPR", "SNPN", "BLPN", "SN", "MFH", "MFP", "MFW", "SCS", "FLD", "EVP", "CAL", "PHPS", "TPD", "TPE",
+              "FBH", "RDBK", "SRR", "SWE", "SRW", "PNR", "TSE", "ETOH", "INK", "FBCR", "LQDT", "DTPR", "ADS", "RGS",
+              "TSBG", "WGW", "BMDR", "GSCS", "SPB", "BRM", "DSTP", "INKR", "MUAD", "FRMP", "HDSZ", "LQHS", "MRRR"]
+SERIES_NUMBERS = [f"{i:02d}" for i in range(1, 11)]          # 01 ... 10
+AUTO_SERIES = "Auto (next number)"
 FIELD_LABELS = {"name": "Item", "category": "Category", "quantity": "Qty", "unit": "Unit",
                 "price": "Price", "min_threshold": "Min", "description": "Description"}
 NUMERIC_FIELDS = {"quantity", "price", "min_threshold"}
@@ -1752,8 +1757,14 @@ def main():
         with st.form("add_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
             stock_no = c1.text_input("Stock Number", placeholder="e.g., 001")
-            code = c2.text_input("Code", placeholder="e.g., BDPR")
-            series = c3.text_input("Series", placeholder="leave empty = next number")
+            try:   # type a letter to filter the list; a code that is not in the list can still be typed in
+                code = c2.selectbox("Code", ITEM_CODES, index=None, placeholder="Type or choose a code",
+                                    accept_new_options=True)
+            except TypeError:
+                code = c2.selectbox("Code", ITEM_CODES, index=None, placeholder="Type or choose a code")
+            code = code or ""
+            series_pick = c3.selectbox("Series", [AUTO_SERIES] + SERIES_NUMBERS)
+            series = "" if series_pick == AUTO_SERIES else series_pick
             name = st.text_input("Item description", placeholder="e.g., BOND PAPER, FOLIO, 70 gsm")
             col1, col2 = st.columns(2)
             with col1:
@@ -1790,8 +1801,10 @@ def main():
                         disabled=["id", "item_desc"], key=f"assign_{len(missing)}",
                         column_config={"id": "ID", "item_desc": "Item Description",
                                        "stock_number": st.column_config.TextColumn("Stock Number"),
-                                       "item_code": st.column_config.TextColumn("Code"),
-                                       "series": st.column_config.TextColumn("Series")})
+                                       "item_code": st.column_config.SelectboxColumn(
+                                           "Code", options=ITEM_CODES + sorted(set(df["item_code"]) - set(ITEM_CODES) - {""})),
+                                       "series": st.column_config.SelectboxColumn(
+                                           "Series", options=SERIES_NUMBERS)})
                     if st.form_submit_button("Save codes", use_container_width=True):
                         try:
                             n = assign_codes(edited)
