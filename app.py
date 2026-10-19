@@ -1714,7 +1714,9 @@ def main():
         # Chart + category breakdown
         agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
                  .sort_values("value"))
-        agg["pct"] = agg["value"] / agg["value"].sum() * 100
+        total_val = agg["value"].sum()
+        agg["pct"] = (agg["value"] / total_val * 100) if total_val > 0 else 0.0  # all-zero stock = 0%, not NaN
+        agg["pct"] = agg["pct"].fillna(0)
         agg["label"] = agg["pct"].round().astype(int).astype(str) + "%"
 
         left, right = st.columns([2, 1])
