@@ -475,7 +475,7 @@ def get_engine():
     return _make_engine(db_url)
 
 
-SCHEMA_VERSION = 6  # bump this whenever tables/columns change so setup re-runs
+SCHEMA_VERSION = 7  # bump this whenever tables/columns change so setup re-runs
 
 
 @st.cache_resource(show_spinner=False)
@@ -551,6 +551,8 @@ def init_db(schema_version=None):
             )
         """)
         conn.exec_driver_sql("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS item_code TEXT")
+        conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
+        conn.exec_driver_sql("UPDATE users SET role = 'admin' WHERE role IS NULL")  # accounts made before roles existed
     return True
 
 
@@ -574,6 +576,13 @@ def _log(conn, action, item_id=None, item_name=None, details="", username=None):
         "INSERT INTO activity_log (username, action, item_id, item_name, details) VALUES (%s, %s, %s, %s, %s)",
         (username or st.session_state.get("user", "system"), action, item_id, item_name, details),
     )
+
+
+def _assert_admin(conn):
+    role = conn.exec_driver_sql("SELECT role FROM users WHERE username = %s",
+                                (st.session_state.get("user"),)).scalar()
+    if role != "admin":
+        raise PermissionError("Only an admin can do this.")
 
 
 def log_activity(action, **kw):
@@ -633,6 +642,7 @@ def update_quantity(item_id, new_quantity):
 
 def delete_item(item_id):
     with get_engine().begin() as conn:
+        _assert_admin(conn)
         row = conn.exec_driver_sql("SELECT name, quantity, unit FROM items WHERE id = %s", (item_id,)).fetchone()
         conn.exec_driver_sql("DELETE FROM items WHERE id = %s", (item_id,))
         if row:
@@ -690,6 +700,8 @@ def save_item_edits(orig, edited):
 def record_movement(item_id, kind, qty, project, move_date):
     """Add or deduct stock AND keep a permanent record (who, when, project, balance before/after)."""
     with get_engine().begin() as conn:
+        if kind == "DEDUCT":
+            _assert_admin(conn)          # staff may only ADD stock
         row = conn.exec_driver_sql(
             "SELECT name, unit, quantity, price, description, stock_number, item_code, series "
             "FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
@@ -713,6 +725,20 @@ def record_movement(item_id, kind, qty, project, move_date):
              f"{'+' if kind == 'ADD' else '-'}{qty:,} {unit} ({before:,} → {after:,}) · Project: {project or '-'} · Date: {move_date}")
     st.cache_data.clear()
     return name, unit, after
+
+
+def update_item_price(item_id, new_price):
+    if new_price < 0:
+        raise ValueError("The price cannot be negative.")
+    with get_engine().begin() as conn:
+        _assert_admin(conn)
+        row = conn.exec_driver_sql("SELECT name, price FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
+        if not row:
+            raise ValueError("This item no longer exists.")
+        conn.exec_driver_sql("UPDATE items SET price = %s WHERE id = %s", (new_price, item_id))
+        _log(conn, "EDIT_ITEM", item_id, row[0], f"Unit price: ₱{(row[1] or 0):,.2f} → ₱{new_price:,.2f}")
+    st.cache_data.clear()
+    return row[0]
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -755,6 +781,7 @@ def assign_codes(edited):
         seen.add(key)
         rows.append((int(r["id"]),) + key)
     with get_engine().begin() as conn:
+        _assert_admin(conn)
         for item_id, a, b, c in rows:
             if conn.exec_driver_sql("SELECT 1 FROM items WHERE stock_number=%s AND item_code=%s AND series=%s AND id<>%s",
                                     (a, b, c, item_id)).fetchone():
@@ -779,7 +806,7 @@ ACTION_LABELS = {
     "LOGIN": "Signed in", "LOGOUT": "Signed out", "SESSION_EXPIRED": "Session expired",
     "LOGIN_FAILED": "Failed sign-in", "LOGIN_BLOCKED": "Blocked (locked account)",
     "ADD_ITEM": "Added item", "UPDATE_STOCK": "Changed stock", "DELETE_ITEM": "Deleted item",
-    "EDIT_ITEM": "Edited item", "STOCK_ADD": "Added stock", "STOCK_DEDUCT": "Deducted stock", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
+    "EDIT_ITEM": "Edited item", "CHANGE_ROLE": "Changed role", "STOCK_ADD": "Added stock", "STOCK_DEDUCT": "Deducted stock", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
 }
 
 
@@ -811,7 +838,7 @@ def count_users():
 def get_user(username):
     with get_engine().begin() as conn:
         r = conn.exec_driver_sql(
-            "SELECT username, full_name, password_hash, failed_attempts, locked_until FROM users WHERE username = %s",
+            "SELECT username, full_name, role, password_hash, failed_attempts, locked_until FROM users WHERE username = %s",
             (username,)).fetchone()
     return dict(r._mapping) if r else None
 
@@ -822,14 +849,38 @@ def set_attempts(username, attempts, locked_until):
                              (attempts, locked_until, username))
 
 
-def create_user(username, full_name, password):
+def create_user(username, full_name, password, role="staff", by_admin=True):
+    """Only an admin may create accounts (the very first account is the exception)."""
     with get_engine().begin() as conn:
-        conn.exec_driver_sql("INSERT INTO users (username, full_name, password_hash) VALUES (%s, %s, %s)",
-                             (username, full_name, hash_password(password)))
+        if by_admin:
+            _assert_admin(conn)
+        conn.exec_driver_sql("INSERT INTO users (username, full_name, password_hash, role) VALUES (%s, %s, %s, %s)",
+                             (username, full_name, hash_password(password), role))
+
+
+def remove_user(target):
+    with get_engine().begin() as conn:
+        _assert_admin(conn)
+        conn.exec_driver_sql("DELETE FROM users WHERE username = %s", (target,))
+        conn.exec_driver_sql("DELETE FROM sessions WHERE username = %s", (target,))
+        _log(conn, "DELETE_USER", details=f"Removed account '{target}'")
+
+
+def change_role(target, role):
+    with get_engine().begin() as conn:
+        _assert_admin(conn)
+        conn.exec_driver_sql("UPDATE users SET role = %s WHERE username = %s", (role, target))
+        conn.exec_driver_sql("DELETE FROM sessions WHERE username = %s", (target,))   # must sign in again
+        _log(conn, "CHANGE_ROLE", details=f"'{target}' is now {role}")
+
+
+def get_role(username):
+    with get_engine().begin() as conn:
+        return conn.exec_driver_sql("SELECT role FROM users WHERE username = %s", (username,)).scalar() or "staff"
 
 
 def list_users():
-    return pd.read_sql("SELECT username, full_name, created_at, locked_until FROM users ORDER BY created_at", get_engine())
+    return pd.read_sql("SELECT username, full_name, role, created_at, locked_until FROM users ORDER BY created_at", get_engine())
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -861,7 +912,7 @@ def create_session(username):
 def lookup_session(token):
     with get_engine().begin() as conn:
         r = conn.exec_driver_sql(
-            "SELECT u.username, u.full_name FROM sessions s JOIN users u ON u.username = s.username "
+            "SELECT u.username, u.full_name, u.role FROM sessions s JOIN users u ON u.username = s.username "
             "WHERE s.token_hash = %s AND s.expires_at > NOW()", (_th(token),)).fetchone()
         if r:  # keep an actively used device signed in (write at most about once a day)
             conn.exec_driver_sql(
@@ -950,7 +1001,8 @@ def restore_session(sess=None):
         f"saved in cookie: {'yes' if cookie_tok else 'no'} | accepted by database: {'yes' if row else 'no'}")
     if not row:
         return False
-    st.session_state.update(user=row["username"], full_name=row["full_name"], session_token=token)
+    st.session_state.update(user=row["username"], full_name=row["full_name"], role=row["role"] or "staff",
+                            session_token=token)
     return True
 
 
@@ -982,8 +1034,8 @@ def attempt_login(username, password):
     if ok:
         set_attempts(username, 0, None)
         token = create_session(username)
-        st.session_state.update(user=username, full_name=user["full_name"], session_token=token,
-                                cookie_cmd=("set", token))
+        st.session_state.update(user=username, full_name=user["full_name"], role=user["role"] or "staff",
+                                session_token=token, cookie_cmd=("set", token))
         log_activity("LOGIN", username=username)
         return True, ""
 
@@ -1002,7 +1054,7 @@ def logout(reason="LOGOUT"):
         delete_session(token)
     if user:
         log_activity(reason, username=user)
-    for k in ("user", "full_name", "nav"):
+    for k in ("user", "full_name", "role", "nav"):
         st.session_state.pop(k, None)
     st.session_state["cookie_cmd"] = ("clear", None)
 
@@ -1066,7 +1118,7 @@ def login_view():
                         elif password_problem(pw, pw2):
                             st.error(password_problem(pw, pw2))
                         else:
-                            create_user(u, full_name.strip(), pw)
+                            create_user(u, full_name.strip(), pw, role="admin", by_admin=False)
                             log_activity("CREATE_USER", username=u, details="First account created")
                             st.session_state["login_msg"] = ("success", "Account created. Please sign in.")
                             st.rerun()
@@ -1328,8 +1380,11 @@ def do_update(item_id, qty, name):
 
 
 def do_delete(item_id, name):
-    delete_item(item_id)
-    flash("success", f"Deleted **{name}**.")
+    try:
+        delete_item(item_id)
+        flash("success", f"Deleted **{name}**.")
+    except PermissionError as e:
+        flash("error", str(e))
 
 
 fragment = getattr(st, "fragment", None) or (lambda f: f)  # older Streamlit: no fragments
@@ -1434,15 +1489,19 @@ def _dismiss_dialog():
     st.session_state["tbl_ver"] = st.session_state.get("tbl_ver", 0) + 1  # new table key = selection cleared
 
 
-def _stock_dialog_body(item_id, name, unit, qty, code=""):
+def _stock_dialog_body(item_id, name, unit, qty, code="", price=0.0):
     ver = st.session_state.get("tbl_ver", 0)
     k = f"{item_id}_{ver}"
+    is_admin = st.session_state.get("role") == "admin"
     today = datetime.now(PH_TZ).date()
     st.markdown(f"<div class='section-title' style='font-size:24px'>{html.escape(str(name))}</div>",
                 unsafe_allow_html=True)
     code_txt = f"Code {code} · " if code else ""
     st.caption(f"{code_txt}Current stock: {qty:,} {unit}")
-    mode = st.radio("Action", ["Add stock", "Deduct stock"], horizontal=True, key=f"dlg_mode_{k}")
+    if is_admin:
+        mode = st.radio("Action", ["Add stock", "Deduct stock"], horizontal=True, key=f"dlg_mode_{k}")
+    else:
+        mode = "Add stock"                       # staff can only add
     deduct = mode == "Deduct stock"
     if deduct and qty <= 0:
         st.warning("There is no stock left to deduct.")
@@ -1461,13 +1520,28 @@ def _stock_dialog_body(item_id, name, unit, qty, code=""):
         try:
             n, u, after = record_movement(item_id, "DEDUCT" if deduct else "ADD", int(amount),
                                           project.strip(), move_date)
-        except ValueError as e:
+        except (ValueError, PermissionError) as e:
             st.error(str(e))
             return
         flash("success", f"{'Deducted' if deduct else 'Added'} {int(amount):,} {u} "
                          f"{'from' if deduct else 'to'} {n}. New total: {after:,} {u}.")
         _dismiss_dialog()
         st.rerun()
+
+    if is_admin:                                  # only admins can change a unit price
+        st.divider()
+        new_price = st.number_input("Unit price (₱) - admin only", min_value=0.0, value=float(price or 0),
+                                    step=0.01, format="%.2f", key=f"dlg_price_{k}")
+        if st.button("Update unit price", use_container_width=True, key=f"dlg_pbtn_{k}",
+                     disabled=abs(float(new_price) - float(price or 0)) < 0.005):
+            try:
+                update_item_price(item_id, float(new_price))
+            except (ValueError, PermissionError) as e:
+                st.error(str(e))
+                return
+            flash("success", f"Unit price of {name} is now ₱{float(new_price):,.2f}.")
+            _dismiss_dialog()
+            st.rerun()
 
 
 try:
@@ -1612,6 +1686,7 @@ def movements_panel():
 
 
 PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
+ADMIN_ONLY_PAGES = {"Remove Item"}
 
 
 def page_header(title, subtitle=None):
@@ -1655,6 +1730,9 @@ def main():
         <div class="menu-label">Main Menu</div>
     """, unsafe_allow_html=True)
 
+    if "role" not in st.session_state:
+        st.session_state["role"] = get_role(st.session_state["user"])
+    is_admin = st.session_state["role"] == "admin"
     if "nav" not in st.session_state:
         st.session_state["nav"] = PAGES[0]
     nav_items = {
@@ -1664,7 +1742,10 @@ def main():
         "Remove Item": ("Remove Item", ":material/delete:"),
         "Security": ("Security", ":material/shield:"),
     }
+    nav_items = {p: v for p, v in nav_items.items() if is_admin or p not in ADMIN_ONLY_PAGES}
     choice = st.session_state["nav"]
+    if choice not in nav_items:
+        choice = st.session_state["nav"] = PAGES[0]
     for p, (label, icon) in nav_items.items():
         kwargs = dict(key=f"nav_{p}", use_container_width=True,
                       type="primary" if choice == p else "secondary",
@@ -1678,7 +1759,7 @@ def main():
         <div class="side-foot">
             <div class="live"><span class="dot"></span>System online</div>
             <div class="foot-title">{html.escape(st.session_state.get("full_name", ""))}</div>
-            <div class="foot-sub">Signed in · DICT Negros Island Region</div>
+            <div class="foot-sub">{"Admin" if is_admin else "Staff"} · DICT Negros Island Region</div>
         </div>
     """, unsafe_allow_html=True)
     st.sidebar.toggle("Animated background", key="anim_on", help="Off = smoother on slower computers")
@@ -1793,7 +1874,7 @@ def main():
                     st.error(str(e))
 
         missing = df[df["full_code"] == ""] if not df.empty else df
-        if len(missing):
+        if len(missing) and is_admin:
             with st.expander(f"Assign codes to existing items ({len(missing)} without a code)"):
                 st.caption("These items were added before codes existed. Fill in Stock Number, Code and Series.")
                 with _form("assign_codes_form"):
@@ -1819,7 +1900,8 @@ def main():
     # ================= RESTOCK =================
     elif choice == "Restock / Adjust":
         page_header("Restock / Adjust Stock",
-                    "Click an item in the table to add or deduct its stock.")
+                    "Click an item in the table to add or deduct its stock." if st.session_state.get("role") == "admin"
+                    else "Click an item in the table to add stock.")
         show_flash()
         if df.empty:
             st.info("No items available to update.")
@@ -1867,7 +1949,8 @@ def main():
                 pos = sel.cells[0][0] if sel.cells else (sel.rows[0] if sel.rows else None)
                 if pos is not None:
                     r = shown.iloc[pos]
-                    stock_dialog(int(r["id"]), r["item_desc"], r["unit"], int(r["quantity"] or 0), r["full_code"])
+                    stock_dialog(int(r["id"]), r["item_desc"], r["unit"], int(r["quantity"] or 0), r["full_code"],
+                                 float(r["price"] or 0))
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
@@ -1903,53 +1986,71 @@ def main():
     elif choice == "Security":
         page_header("Security", "Accounts and a record of who did what in this system.")
         show_flash()
-        tab_log, tab_moves, tab_users, tab_pw = st.tabs(["Activity Log", "Stock Movements", "User Accounts", "My Password"])
+        if is_admin:
+            tab_log, tab_moves, tab_users, tab_pw = st.tabs(["Activity Log", "Stock Movements", "User Accounts", "My Password"])
 
-        with tab_log:
-            activity_panel()
+            with tab_log:
+                activity_panel()
 
-        with tab_moves:
-            movements_panel()
+            with tab_moves:
+                movements_panel()
 
-        with tab_users:
-            users = list_users()
-            users["status"] = users["locked_until"].map(
-                lambda t: "Locked" if pd.notna(t) and t > pd.Timestamp.now(tz="UTC") else "Active")
-            users["created_at"] = pd.to_datetime(users["created_at"], utc=True).dt.tz_convert(
-                "Asia/Manila").dt.strftime("%b %d, %Y")
-            st.dataframe(users[["username", "full_name", "status", "created_at"]], use_container_width=True,
-                         hide_index=True, column_config={"username": "Username", "full_name": "Full name",
-                                                         "status": "Status", "created_at": "Created"})
-            with st.expander("Add a new account"):
-                with st.form("new_user_form", clear_on_submit=True):
-                    n_name = st.text_input("Full name")
-                    n_user = st.text_input("Username", placeholder="letters, numbers, . _ -")
-                    n_pw = st.text_input("Password (min. 8 characters)", type="password")
-                    n_pw2 = st.text_input("Confirm password", type="password")
-                    if st.form_submit_button("Create account", use_container_width=True):
-                        u = n_user.strip().lower()
-                        if not n_name.strip() or not USERNAME_RE.match(u):
-                            st.error("Enter a name and a username of 3-30 letters, numbers, . _ -")
-                        elif password_problem(n_pw, n_pw2):
-                            st.error(password_problem(n_pw, n_pw2))
-                        elif get_user(u):
-                            st.error("That username already exists.")
-                        else:
-                            create_user(u, n_name.strip(), n_pw)
-                            log_activity("CREATE_USER", details=f"Created account '{u}'")
-                            flash("success", f"Account **{u}** created.")
-                            st.rerun()
-            others = [u for u in users["username"] if u != st.session_state["user"]]
-            if others:
-                with st.expander("Remove an account"):
-                    target = st.selectbox("Account to remove", others)
-                    if st.button("Remove account", key="rm_user"):
-                        with get_engine().begin() as conn:
-                            conn.exec_driver_sql("DELETE FROM users WHERE username = %s", (target,))
-                            conn.exec_driver_sql("DELETE FROM sessions WHERE username = %s", (target,))
-                            _log(conn, "DELETE_USER", details=f"Removed account '{target}'")
-                        flash("success", f"Account **{target}** removed.")
-                        st.rerun()
+            with tab_users:
+                users = list_users()
+                users["status"] = users["locked_until"].map(
+                    lambda t: "Locked" if pd.notna(t) and t > pd.Timestamp.now(tz="UTC") else "Active")
+                users["created_at"] = pd.to_datetime(users["created_at"], utc=True).dt.tz_convert(
+                    "Asia/Manila").dt.strftime("%b %d, %Y")
+                st.dataframe(users[["username", "full_name", "role", "status", "created_at"]], use_container_width=True,
+                             hide_index=True, column_config={"username": "Username", "full_name": "Full name",
+                                                             "role": "Role", "status": "Status", "created_at": "Created"})
+                with st.expander("Add a new account"):
+                    with st.form("new_user_form", clear_on_submit=True):
+                        n_name = st.text_input("Full name")
+                        n_user = st.text_input("Username", placeholder="letters, numbers, . _ -")
+                        n_pw = st.text_input("Password (min. 8 characters)", type="password")
+                        n_pw2 = st.text_input("Confirm password", type="password")
+                        n_role = st.selectbox("Role", ["Staff", "Admin"], help="Staff can only add items and add stock.")
+                        if st.form_submit_button("Create account", use_container_width=True):
+                            u = n_user.strip().lower()
+                            if not n_name.strip() or not USERNAME_RE.match(u):
+                                st.error("Enter a name and a username of 3-30 letters, numbers, . _ -")
+                            elif password_problem(n_pw, n_pw2):
+                                st.error(password_problem(n_pw, n_pw2))
+                            elif get_user(u):
+                                st.error("That username already exists.")
+                            else:
+                                try:
+                                    create_user(u, n_name.strip(), n_pw, role=n_role.lower())
+                                    log_activity("CREATE_USER", details=f"Created {n_role.lower()} account '{u}'")
+                                    flash("success", f"{n_role} account **{u}** created.")
+                                    st.rerun()
+                                except PermissionError as e:
+                                    st.error(str(e))
+                others = [u for u in users["username"] if u != st.session_state["user"]]
+                if others:
+                    with st.expander("Remove an account"):
+                        target = st.selectbox("Account to remove", others)
+                        if st.button("Remove account", key="rm_user"):
+                            try:
+                                remove_user(target)
+                                flash("success", f"Account **{target}** removed.")
+                                st.rerun()
+                            except PermissionError as e:
+                                st.error(str(e))
+                    with st.expander("Change an account's role"):
+                        t_user = st.selectbox("Account", others, key="role_user")
+                        t_role = st.selectbox("New role", ["Staff", "Admin"], key="role_new")
+                        if st.button("Save role", key="role_save"):
+                            try:
+                                change_role(t_user, t_role.lower())
+                                flash("success", f"**{t_user}** is now {t_role}. They must sign in again.")
+                                st.rerun()
+                            except PermissionError as e:
+                                st.error(str(e))
+
+        else:
+            tab_pw = st.tabs(["My Password"])[0]
 
         with tab_pw:
             with st.form("pw_form", clear_on_submit=True):
