@@ -475,7 +475,7 @@ def get_engine():
     return _make_engine(db_url)
 
 
-SCHEMA_VERSION = 7  # bump this whenever tables/columns change so setup re-runs
+SCHEMA_VERSION = 8  # bump this whenever tables/columns change so setup re-runs
 
 
 @st.cache_resource(show_spinner=False)
@@ -501,8 +501,11 @@ def init_db(schema_version=None):
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS stock_number TEXT")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS item_code TEXT")
         conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS series TEXT")
+        conn.exec_driver_sql("ALTER TABLE items ADD COLUMN IF NOT EXISTS program TEXT")
+        conn.exec_driver_sql("UPDATE items SET program = 'Admin' WHERE program IS NULL")   # existing stock = Admin program
+        conn.exec_driver_sql("DROP INDEX IF EXISTS items_code_uq")
         conn.exec_driver_sql(
-            "CREATE UNIQUE INDEX IF NOT EXISTS items_code_uq ON items (stock_number, item_code, series) "
+            "CREATE UNIQUE INDEX IF NOT EXISTS items_code_prog_uq ON items (program, stock_number, item_code, series) "
             "WHERE stock_number IS NOT NULL AND item_code IS NOT NULL AND series IS NOT NULL")
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS users (
@@ -553,9 +556,46 @@ def init_db(schema_version=None):
         conn.exec_driver_sql("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS item_code TEXT")
         conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
         conn.exec_driver_sql("UPDATE users SET role = 'admin' WHERE role IS NULL")  # accounts made before roles existed
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id SERIAL PRIMARY KEY,
+                program TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (program, name)
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS procurements (
+                id SERIAL PRIMARY KEY,
+                program TEXT NOT NULL,
+                project_id INTEGER NOT NULL,
+                po_number TEXT,
+                supplier TEXT,
+                proc_date DATE,
+                remarks TEXT,
+                created_by TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS procurement_items (
+                id SERIAL PRIMARY KEY,
+                procurement_id INTEGER NOT NULL,
+                item_id INTEGER,
+                item_name TEXT,
+                item_code TEXT,
+                unit TEXT,
+                quantity INTEGER,
+                unit_price REAL
+            )
+        """)
+        conn.exec_driver_sql("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS procurement_id INTEGER")
+        conn.exec_driver_sql("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS program TEXT")
     return True
 
 
+PROGRAMS = ["Admin", "ILCDB", "Free-Wifi"]
 CATEGORIES = ["Hardware / Peripherals", "Office Supplies", "Networking Equipment",
               "Furniture & Fixtures", "ICT Equipment"]
 ITEM_CODES = ["BDPR", "SNPN", "BLPN", "SN", "MFH", "MFP", "MFW", "SCS", "FLD", "EVP", "CAL", "PHPS", "TPD", "TPE",
@@ -591,27 +631,27 @@ def log_activity(action, **kw):
 
 
 def add_item(name, category, quantity, price, min_threshold, unit="Pcs.", description="",
-             stock_number=None, item_code=None, series=None):
-    """Returns the full code (e.g. 001-BDPR-01). Series is numbered automatically when left empty."""
+             stock_number=None, item_code=None, series=None, program="Admin"):
+    """Returns the full code (e.g. 001-BDPR-01). Series is numbered automatically (per program) when left empty."""
     with get_engine().begin() as conn:
         if stock_number and item_code:
             used = [r[0] for r in conn.exec_driver_sql(
-                "SELECT series FROM items WHERE stock_number = %s AND item_code = %s",
-                (stock_number, item_code)).fetchall() if r[0]]
+                "SELECT series FROM items WHERE program = %s AND stock_number = %s AND item_code = %s",
+                (program, stock_number, item_code)).fetchall() if r[0]]
             if not series:
                 nums = [int(x) for x in used if str(x).isdigit()]
                 series = f"{(max(nums) + 1 if nums else 1):02d}"
             elif series in used:
-                raise ValueError(f"The code {stock_number}-{item_code}-{series} already exists.")
+                raise ValueError(f"The code {stock_number}-{item_code}-{series} already exists in {program}.")
         full = f"{stock_number}-{item_code}-{series}" if (stock_number and item_code and series) else ""
         new_id = conn.exec_driver_sql(
             "INSERT INTO items (name, category, quantity, price, min_threshold, unit, description, "
-            "stock_number, item_code, series) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "stock_number, item_code, series, program) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (name, category, quantity, price, min_threshold, unit, description,
-             stock_number or None, item_code or None, series or None),
+             stock_number or None, item_code or None, series or None, program),
         ).scalar()
         _log(conn, "ADD_ITEM", new_id, name,
-             f"{full + ' · ' if full else ''}{quantity} {unit} @ ₱{price:,.2f} · {category}")
+             f"{program} · {full + ' · ' if full else ''}{quantity} {unit} @ ₱{price:,.2f} · {category}")
     st.cache_data.clear()
     return full
 
@@ -625,6 +665,7 @@ def get_inventory():
     df["amount"] = df["quantity"] * df["price"]
     for c in ("stock_number", "item_code", "series"):
         df[c] = df[c].fillna("")
+    df["program"] = df["program"].fillna("Admin")
     df["full_code"] = [f"{a}-{b}-{c}" if (a and b and c) else ""
                        for a, b, c in zip(df["stock_number"], df["item_code"], df["series"])]
     df["item_desc"] = [n + (", " + d if d else "") for n, d in zip(df["name"], df["description"])]
@@ -697,34 +738,41 @@ def save_item_edits(orig, edited):
     return n
 
 
+def _apply_movement(conn, item_id, kind, qty, project, move_date, procurement_id=None):
+    """Change the stock inside an open transaction and write the movement record."""
+    row = conn.exec_driver_sql(
+        "SELECT name, unit, quantity, price, description, stock_number, item_code, series, program "
+        "FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
+    if not row:
+        raise ValueError("This item no longer exists.")
+    name, unit, before, price, desc, sn, ic, sr, prog = row
+    before = before or 0
+    full_code = f"{sn}-{ic}-{sr}" if (sn and ic and sr) else ""
+    name = name + (", " + desc if desc else "")
+    after = before + qty if kind == "ADD" else before - qty
+    if after < 0:
+        raise ValueError(f"Only {before:,} {unit} left in stock.")
+    conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (after, item_id))
+    conn.exec_driver_sql(
+        "INSERT INTO stock_movements (item_id, item_name, unit, movement_type, quantity, balance_before, "
+        "balance_after, unit_price, project, movement_date, done_by, item_code, program, procurement_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (item_id, name, unit, kind, qty, before, after, price or 0, project, move_date,
+         st.session_state.get("user", "system"), full_code, prog or "Admin", procurement_id))
+    _log(conn, "STOCK_ADD" if kind == "ADD" else "STOCK_DEDUCT", item_id, name,
+         f"{prog or 'Admin'} · {'+' if kind == 'ADD' else '-'}{qty:,} {unit} ({before:,} → {after:,}) · "
+         f"Project: {project or '-'} · Date: {move_date}")
+    return name, unit, after, full_code, price or 0
+
+
 def record_movement(item_id, kind, qty, project, move_date):
     """Add or deduct stock AND keep a permanent record (who, when, project, balance before/after)."""
     with get_engine().begin() as conn:
         if kind == "DEDUCT":
             _assert_admin(conn)          # staff may only ADD stock
-        row = conn.exec_driver_sql(
-            "SELECT name, unit, quantity, price, description, stock_number, item_code, series "
-            "FROM items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
-        if not row:
-            raise ValueError("This item no longer exists.")
-        name, unit, before, price, desc, sn, ic, sr = row
-        full_code = f"{sn}-{ic}-{sr}" if (sn and ic and sr) else ""
-        name = name + (", " + desc if desc else "")
-        before = before or 0
-        after = before + qty if kind == "ADD" else before - qty
-        if after < 0:
-            raise ValueError(f"Only {before:,} {unit} left in stock.")
-        conn.exec_driver_sql("UPDATE items SET quantity = %s WHERE id = %s", (after, item_id))
-        conn.exec_driver_sql(
-            "INSERT INTO stock_movements (item_id, item_name, unit, movement_type, quantity, balance_before, "
-            "balance_after, unit_price, project, movement_date, done_by, item_code) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (item_id, name, unit, kind, qty, before, after, price or 0, project, move_date,
-             st.session_state.get("user", "system"), full_code))
-        _log(conn, "STOCK_ADD" if kind == "ADD" else "STOCK_DEDUCT", item_id, name,
-             f"{'+' if kind == 'ADD' else '-'}{qty:,} {unit} ({before:,} → {after:,}) · Project: {project or '-'} · Date: {move_date}")
+        res = _apply_movement(conn, item_id, kind, qty, project, move_date)
     st.cache_data.clear()
-    return name, unit, after
+    return res[:3]
 
 
 def update_item_price(item_id, new_price):
@@ -741,13 +789,94 @@ def update_item_price(item_id, new_price):
     return row[0]
 
 
+def record_procurement(program, project_name, po_number, supplier, proc_date, remarks, lines):
+    """One procurement = a purchase/delivery for a project. Adds the stock of every line and links it all together."""
+    project_name = (project_name or "").strip()
+    if not project_name:
+        raise ValueError("Please choose or type the project.")
+    if not lines:
+        raise ValueError("Add at least one item to the procurement.")
+    with get_engine().begin() as conn:
+        project_id = conn.exec_driver_sql(
+            "INSERT INTO projects (program, name) VALUES (%s, %s) "
+            "ON CONFLICT (program, name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+            (program, project_name)).scalar()
+        pid = conn.exec_driver_sql(
+            "INSERT INTO procurements (program, project_id, po_number, supplier, proc_date, remarks, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (program, project_id, (po_number or "").strip(), (supplier or "").strip(), proc_date,
+             (remarks or "").strip(), st.session_state.get("user", "system"))).scalar()
+        for item_id, qty in lines:
+            owner = conn.exec_driver_sql("SELECT program FROM items WHERE id = %s", (item_id,)).scalar()
+            if owner != program:
+                raise ValueError(f"An item in the list does not belong to the {program} program.")
+            name, unit, after, code, price = _apply_movement(conn, item_id, "ADD", int(qty), project_name,
+                                                             proc_date, pid)
+            conn.exec_driver_sql(
+                "INSERT INTO procurement_items (procurement_id, item_id, item_name, item_code, unit, quantity, unit_price) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)", (pid, item_id, name, code, unit, int(qty), price))
+        _log(conn, "PROCUREMENT", None, project_name,
+             f"{program} · PO {(po_number or '-').strip() or '-'} · {len(lines)} item(s) · {supplier or '-'}")
+    st.cache_data.clear()
+    return len(lines)
+
+
+def move_items(edited):
+    """Admin: change which program an existing item belongs to."""
+    n = 0
+    with get_engine().begin() as conn:
+        _assert_admin(conn)
+        for _, r in edited.iterrows():
+            cur = conn.exec_driver_sql(
+                "SELECT program, stock_number, item_code, series, name FROM items WHERE id = %s",
+                (int(r["id"]),)).fetchone()
+            if not cur or cur[0] == r["program"]:
+                continue
+            if cur[1] and cur[2] and cur[3] and conn.exec_driver_sql(
+                    "SELECT 1 FROM items WHERE program=%s AND stock_number=%s AND item_code=%s AND series=%s AND id<>%s",
+                    (r["program"], cur[1], cur[2], cur[3], int(r["id"]))).fetchone():
+                raise ValueError(f"{cur[1]}-{cur[2]}-{cur[3]} already exists in {r['program']}.")
+            conn.exec_driver_sql("UPDATE items SET program = %s WHERE id = %s", (r["program"], int(r["id"])))
+            _log(conn, "EDIT_ITEM", int(r["id"]), cur[4], f"Program: {cur[0]} → {r['program']}")
+            n += 1
+    if n:
+        st.cache_data.clear()
+    return n
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def get_projects():
+    return pd.read_sql("SELECT id, program, name FROM projects ORDER BY program, name", get_engine())
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def get_procurements():
+    df = pd.read_sql("""
+        SELECT p.id AS proc_id, p.program, pr.name AS project, p.po_number, p.supplier, p.proc_date, p.remarks,
+               p.created_by, i.item_name, i.item_code, i.unit, i.quantity, i.unit_price,
+               (i.quantity * i.unit_price) AS amount
+        FROM procurements p JOIN projects pr ON pr.id = p.project_id
+        LEFT JOIN procurement_items i ON i.procurement_id = p.id
+        ORDER BY p.proc_date DESC, p.id DESC, i.id""", get_engine())
+    if not df.empty:
+        df["proc_date"] = pd.to_datetime(df["proc_date"])
+        for c in ("po_number", "supplier", "remarks", "item_code"):
+            df[c] = df[c].fillna("")
+        df["amount"] = df["amount"].fillna(0)
+    return df
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def get_movements():
-    df = pd.read_sql("SELECT * FROM stock_movements ORDER BY movement_date DESC, id DESC", get_engine())
+    df = pd.read_sql("SELECT m.*, p.po_number FROM stock_movements m "
+                     "LEFT JOIN procurements p ON p.id = m.procurement_id "
+                     "ORDER BY m.movement_date DESC, m.id DESC", get_engine())
     if not df.empty:
         df["movement_date"] = pd.to_datetime(df["movement_date"])
         df["amount"] = df["quantity"] * df["unit_price"].fillna(0)
         df["item_code"] = df["item_code"].fillna("")
+        df["program"] = df["program"].fillna("Admin")
+        df["po_number"] = df["po_number"].fillna("")
     return df
 
 
@@ -783,8 +912,9 @@ def assign_codes(edited):
     with get_engine().begin() as conn:
         _assert_admin(conn)
         for item_id, a, b, c in rows:
-            if conn.exec_driver_sql("SELECT 1 FROM items WHERE stock_number=%s AND item_code=%s AND series=%s AND id<>%s",
-                                    (a, b, c, item_id)).fetchone():
+            if conn.exec_driver_sql("SELECT 1 FROM items WHERE stock_number=%s AND item_code=%s AND series=%s AND id<>%s "
+                                    "AND program = (SELECT program FROM items WHERE id=%s)",
+                                    (a, b, c, item_id, item_id)).fetchone():
                 raise ValueError(f"The code {a}-{b}-{c} already belongs to another item.")
             conn.exec_driver_sql("UPDATE items SET stock_number=%s, item_code=%s, series=%s WHERE id=%s",
                                  (a, b, c, item_id))
@@ -806,7 +936,7 @@ ACTION_LABELS = {
     "LOGIN": "Signed in", "LOGOUT": "Signed out", "SESSION_EXPIRED": "Session expired",
     "LOGIN_FAILED": "Failed sign-in", "LOGIN_BLOCKED": "Blocked (locked account)",
     "ADD_ITEM": "Added item", "UPDATE_STOCK": "Changed stock", "DELETE_ITEM": "Deleted item",
-    "EDIT_ITEM": "Edited item", "CHANGE_ROLE": "Changed role", "STOCK_ADD": "Added stock", "STOCK_DEDUCT": "Deducted stock", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
+    "EDIT_ITEM": "Edited item", "PROCUREMENT": "Recorded procurement", "CHANGE_ROLE": "Changed role", "STOCK_ADD": "Added stock", "STOCK_DEDUCT": "Deducted stock", "CREATE_USER": "Created account", "DELETE_USER": "Deleted account", "CHANGE_PASSWORD": "Changed password",
 }
 
 
@@ -1396,25 +1526,30 @@ def inventory_records(df, search_query=""):
     low_mask = df["quantity"] <= df["min_threshold"]
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Inventory Records</div>", unsafe_allow_html=True)
-    f1, f2 = st.columns([2, 1])
+    f1, f2, f3 = st.columns([2, 1, 1])
     with f1:
         name_filter = st.text_input("Search item or code", search_query, placeholder="Item description or code")
     with f2:
+        prog_filter = st.selectbox("Program", ["All"] + PROGRAMS)
+    with f3:
         cats = ["All"] + list(df["category"].dropna().unique())
         cat_filter = st.selectbox("Category", cats)
 
     view = df
+    if prog_filter != "All":
+        view = view[view["program"] == prog_filter]
     if name_filter:
         view = view[view["item_desc"].str.contains(name_filter, case=False, na=False, regex=False)
                     | view["full_code"].str.contains(name_filter, case=False, na=False, regex=False)]
     if cat_filter != "All":
         view = view[view["category"] == cat_filter]
     view = view.assign(status=low_mask.loc[view.index].map({True: "🔴 Low stock", False: "🟢 In stock"}))
-    view = view[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
+    view = view[["program", "stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
                  "category", "price", "amount", "min_threshold", "status"]]
     st.dataframe(
         view, use_container_width=True, hide_index=True,
         column_config={
+            "program": st.column_config.TextColumn("Program", width="small"),
             "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
         "item_code": st.column_config.TextColumn("Code", width="small"),
         "series": st.column_config.TextColumn("Series", width="small"),
@@ -1428,12 +1563,13 @@ def inventory_records(df, search_query=""):
     )
     total_bar(view)
 
-    exp = view.reset_index(drop=True)[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity",
-                                       "unit", "category", "price", "amount"]]
+    exp = view.reset_index(drop=True)[["program", "stock_number", "item_code", "series", "full_code", "item_desc",
+                                       "quantity", "unit", "category", "price", "amount"]]
     exp.insert(0, "No.", range(1, len(exp) + 1))
-    exp.columns = ["No.", "Stock Number", "Code", "Series", "Code", "Item Description", "Qty", "Unit", "Category",
-                   "Unit Price (₱)", "Amount (₱)"]
-    flt = " · ".join(x for x in [f"Item: {name_filter}" if name_filter else "",
+    exp.columns = ["No.", "Program", "Stock Number", "Code", "Series", "Code", "Item Description", "Qty", "Unit",
+                   "Category", "Unit Price (₱)", "Amount (₱)"]
+    flt = " · ".join(x for x in [f"Program: {prog_filter}" if prog_filter != "All" else "",
+                                  f"Item: {name_filter}" if name_filter else "",
                                   f"Category: {cat_filter}" if cat_filter != "All" else ""] if x)
     export_menu("Inventory Report", report_subtitle(flt), exp, {"Unit Price (₱)", "Amount (₱)"},
                 total=float(view["amount"].sum()), base="inventory-report", key="exp_inv")
@@ -1489,14 +1625,14 @@ def _dismiss_dialog():
     st.session_state["tbl_ver"] = st.session_state.get("tbl_ver", 0) + 1  # new table key = selection cleared
 
 
-def _stock_dialog_body(item_id, name, unit, qty, code="", price=0.0):
+def _stock_dialog_body(item_id, name, unit, qty, code="", price=0.0, program=""):
     ver = st.session_state.get("tbl_ver", 0)
     k = f"{item_id}_{ver}"
     is_admin = st.session_state.get("role") == "admin"
     today = datetime.now(PH_TZ).date()
     st.markdown(f"<div class='section-title' style='font-size:24px'>{html.escape(str(name))}</div>",
                 unsafe_allow_html=True)
-    code_txt = f"Code {code} · " if code else ""
+    code_txt = (f"{program} · " if program else "") + (f"Code {code} · " if code else "")
     st.caption(f"{code_txt}Current stock: {qty:,} {unit}")
     if is_admin:
         mode = st.radio("Action", ["Add stock", "Deduct stock"], horizontal=True, key=f"dlg_mode_{k}")
@@ -1584,11 +1720,12 @@ def movement_report(sub, kind, label, filters_text):
     show = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"),
                       type=sub["movement_type"].map(type_names),
                       change=sub["balance_before"].astype(str) + " → " + sub["balance_after"].astype(str))
-    cols = ["date", "item_code", "item_name", "quantity", "unit", "project", "done_by", "change", "amount"]
+    cols = ["date", "program", "item_code", "item_name", "quantity", "unit", "project", "po_number", "done_by",
+            "change", "amount"]
     if is_all:
         cols.insert(1, "type")
     st.dataframe(show[cols], use_container_width=True, hide_index=True, column_config={
-        "date": "Date", "type": "Type", "item_code": "Code", "item_name": "Item Description", "quantity": "Qty", "unit": "Unit",
+        "date": "Date", "type": "Type", "program": "Program", "po_number": "PO", "item_code": "Code", "item_name": "Item Description", "quantity": "Qty", "unit": "Unit",
         "project": "Project", "done_by": "Done by", "change": "Stock before → after",
         "amount": st.column_config.NumberColumn("Value", format="₱%.2f")})
 
@@ -1605,9 +1742,10 @@ def movement_report(sub, kind, label, filters_text):
             "deducted": "Total deducted", "amount": st.column_config.NumberColumn("Total value", format="₱%.2f")})
 
     exp = sub.assign(date=sub["movement_date"].dt.strftime("%b %d, %Y"), type=sub["movement_type"].map(type_names))
-    ecols = ["date", "item_code", "item_name", "quantity", "unit", "project", "done_by", "balance_before", "balance_after",
-             "unit_price", "amount"]
-    enames = ["Date", "Code", "Item Description", "Qty", "Unit", "Project", "Done by", "Before", "After", "Unit Price (₱)", "Value (₱)"]
+    ecols = ["date", "program", "item_code", "item_name", "quantity", "unit", "project", "po_number", "done_by",
+             "balance_before", "balance_after", "unit_price", "amount"]
+    enames = ["Date", "Program", "Code", "Item Description", "Qty", "Unit", "Project", "PO", "Done by", "Before",
+              "After", "Unit Price (₱)", "Value (₱)"]
     if is_all:
         ecols.insert(1, "type")
         enames.insert(1, "Type")
@@ -1656,7 +1794,8 @@ def movements_panel():
         st.info("No stock movements yet. Add or deduct stock from the Restock / Adjust page "
                 "and every movement will be recorded here.")
     else:
-        f1, f2, f3 = st.columns(3)
+        f0, f1, f2, f3 = st.columns(4)
+        prog_f = f0.selectbox("Program", ["All"] + PROGRAMS, key="mv_prog")
         item_f = f1.selectbox("Item", ["All"] + sorted(mv["item_name"].dropna().unique().tolist()), key="mv_item")
         user_f = f2.selectbox("Done by", ["All"] + sorted(mv["done_by"].dropna().unique().tolist()), key="mv_user")
         lo, hi = mv["movement_date"].min().date(), mv["movement_date"].max().date()
@@ -1664,6 +1803,9 @@ def movements_panel():
                             key=f"mv_range_{lo}_{hi}")   # new records = fresh range, never hides them
         view_mv = mv
         notes = []
+        if prog_f != "All":
+            view_mv = view_mv[view_mv["program"] == prog_f]
+            notes.append(f"Program: {prog_f}")
         if item_f != "All":
             view_mv = view_mv[view_mv["item_name"] == item_f]
             notes.append(f"Item: {item_f}")
@@ -1685,7 +1827,169 @@ def movements_panel():
             movement_report(view_mv[view_mv["movement_type"] == "ADD"], "ADD", "Added", " · ".join(notes))
 
 
-PAGES = ["Dashboard", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
+def _items_table(d, show_program=False):
+    cols = (["program"] if show_program else []) + ["stock_number", "item_code", "series", "full_code", "item_desc",
+                                                    "quantity", "unit", "category", "price", "amount"]
+    st.dataframe(d[cols], hide_index=True, use_container_width=True, column_config={
+        "program": st.column_config.TextColumn("Program", width="small"),
+        "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
+        "item_code": st.column_config.TextColumn("Code", width="small"),
+        "series": st.column_config.TextColumn("Series", width="small"),
+        "full_code": st.column_config.TextColumn("Code", width="medium"),
+        "item_desc": st.column_config.TextColumn("Item Description", width="large"),
+        "quantity": "Qty", "unit": "Unit", "category": "Category",
+        "price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+        "amount": st.column_config.NumberColumn("Amount", format="₱%.2f")})
+
+
+def _export_items(d, title, base, key, note=""):
+    exp = d.reset_index(drop=True)[["program", "stock_number", "item_code", "series", "full_code", "item_desc",
+                                    "quantity", "unit", "category", "price", "amount"]]
+    exp.insert(0, "No.", range(1, len(exp) + 1))
+    exp.columns = ["No.", "Program", "Stock Number", "Code", "Series", "Code", "Item Description", "Qty", "Unit",
+                   "Category", "Unit Price (₱)", "Amount (₱)"]
+    export_menu(title, report_subtitle(note), exp, {"Unit Price (₱)", "Amount (₱)"},
+                total=float(d["amount"].sum()), base=base, key=key)
+
+
+def procurement_form(program, dfp, projs):
+    with st.expander("Record a procurement (adds the stock)"):
+        if dfp.empty:
+            st.info(f"There are no {program} items yet. Add them on the Add Item page first.")
+            return
+        labels = {int(r.id): f"{r.full_code or 'no code'} · {r.item_desc} ({r.unit})" for r in dfp.itertuples()}
+        rev = {v: k for k, v in labels.items()}
+        ver = st.session_state.get("proc_ver", 0)
+        k = f"{program}_{ver}"
+        existing = projs[projs["program"] == program]["name"].tolist() if not projs.empty else []
+        today = datetime.now(PH_TZ).date()
+        with _form(f"proc_form_{k}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                try:
+                    project = st.selectbox("Project", existing, index=None, key=f"proc_project_{k}",
+                                           placeholder="Choose, or type a new project", accept_new_options=True)
+                except TypeError:
+                    project = st.selectbox("Project", existing, index=None, key=f"proc_project_{k}",
+                                           placeholder="Choose a project")
+            po = c2.text_input("PO / reference number", key=f"proc_po_{k}")
+            c3, c4 = st.columns(2)
+            supplier = c3.text_input("Supplier", key=f"proc_sup_{k}")
+            pdate = c4.date_input("Date", value=today, max_value=today, key=f"proc_date_{k}")
+            remarks = st.text_input("Remarks (optional)", key=f"proc_rem_{k}")
+            st.caption("Add one row for each item that was bought, then press Save.")
+            lines = st.data_editor(
+                pd.DataFrame({"Item": pd.Series(dtype="object"), "Quantity": pd.Series(dtype="float64")}),
+                num_rows="dynamic", hide_index=True, use_container_width=True, key=f"proc_lines_{k}",
+                column_config={"Item": st.column_config.SelectboxColumn("Item", options=list(labels.values()),
+                                                                        required=True),
+                               "Quantity": st.column_config.NumberColumn("Quantity", min_value=1, step=1,
+                                                                         required=True)})
+            if st.form_submit_button("Save procurement and add stock", use_container_width=True):
+                chosen = [(rev[r["Item"]], int(r["Quantity"])) for _, r in lines.iterrows()
+                          if not pd.isna(r["Item"]) and not pd.isna(r["Quantity"]) and r["Item"] in rev]
+                try:
+                    n = record_procurement(program, project, po, supplier, pdate, remarks, chosen)
+                    st.session_state["proc_ver"] = ver + 1
+                    flash("success", f"Procurement saved: {n} item(s) added to {program} stock under \"{project}\".")
+                    st.rerun()
+                except (ValueError, PermissionError) as e:
+                    st.error(str(e))
+
+
+def procurement_block(program, projs, procs):
+    pr = projs[projs["program"] == program] if not projs.empty else projs
+    if pr.empty:
+        st.info("No projects yet. Record a procurement above and its project will appear here.")
+        return
+    for name in pr["name"]:
+        sub = procs[(procs["program"] == program) & (procs["project"] == name)] if not procs.empty else procs
+        n = sub["proc_id"].nunique() if not sub.empty else 0
+        total = float(sub["amount"].sum()) if not sub.empty else 0.0
+        with st.expander(f"{name}  ·  {n} procurement(s)  ·  ₱{total:,.2f}"):
+            if sub.empty:
+                st.caption("No procurement recorded for this project yet.")
+                continue
+            for _, g in sub.groupby("proc_id", sort=False):
+                h = g.iloc[0]
+                st.markdown(f"**PO {h['po_number'] or '-'}** · {h['supplier'] or '-'} · "
+                            f"{h['proc_date']:%b %d, %Y} · recorded by {h['created_by']}")
+                if h["remarks"]:
+                    st.caption(h["remarks"])
+                st.dataframe(g[["item_code", "item_name", "quantity", "unit", "unit_price", "amount"]],
+                             hide_index=True, use_container_width=True, column_config={
+                                 "item_code": "Code", "item_name": "Item Description", "quantity": "Qty",
+                                 "unit": "Unit",
+                                 "unit_price": st.column_config.NumberColumn("Unit Price", format="₱%.2f"),
+                                 "amount": st.column_config.NumberColumn("Amount", format="₱%.2f")})
+                st.markdown(f"<div style='text-align:right; margin-bottom:14px'><b>Total: ₱{float(g['amount'].sum()):,.2f}</b></div>",
+                            unsafe_allow_html=True)
+
+
+def program_panel(prog, df, projs, procs):
+    dfp = df[df["program"] == prog]
+    pr = projs[projs["program"] == prog] if not projs.empty else projs
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_card("Items", f"{len(dfp)}", f"{dfp['category'].nunique()} category(ies)", "badge-orange")
+    with c2:
+        metric_card("Total stock", f"{int(dfp['quantity'].sum()):,}", "units on hand", "badge-green")
+    with c3:
+        metric_card("Stock value", f"₱{float(dfp['amount'].sum()):,.2f}", f"{len(pr)} project(s)", "badge-orange")
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    t_items, t_proc = st.tabs(["Items", "Projects & Procurement"])
+    with t_items:
+        if dfp.empty:
+            st.info(f"No {prog} items yet. Add them on the Add Item page and choose {prog} as the program.")
+        else:
+            _items_table(dfp)
+            total_bar(dfp)
+            _export_items(dfp, f"{prog} Masterlist", f"masterlist-{prog.lower()}", f"exp_ml_{prog}", f"Program: {prog}")
+    with t_proc:
+        procurement_form(prog, dfp, projs)
+        procurement_block(prog, projs, procs)
+
+
+def masterlist_overview(df, projs, procs, is_admin):
+    rows = []
+    for prog in PROGRAMS:
+        d = df[df["program"] == prog]
+        pc = procs[procs["program"] == prog] if not procs.empty else procs
+        rows.append({"Program": prog, "Items": len(d), "Total stock": int(d["quantity"].sum()),
+                     "Stock value": float(d["amount"].sum()),
+                     "Projects": int((projs["program"] == prog).sum()) if not projs.empty else 0,
+                     "Procurements": int(pc["proc_id"].nunique()) if not pc.empty else 0,
+                     "Procured value": float(pc["amount"].sum()) if not pc.empty else 0.0})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, column_config={
+        "Stock value": st.column_config.NumberColumn(format="₱%.2f"),
+        "Procured value": st.column_config.NumberColumn(format="₱%.2f")})
+    st.markdown("<div class='section-title'>All items</div>", unsafe_allow_html=True)
+    if df.empty:
+        st.info("No items yet.")
+    else:
+        _items_table(df, show_program=True)
+        total_bar(df)
+        _export_items(df, "Masterlist (all programs)", "masterlist-all", "exp_ml_all")
+    if is_admin and not df.empty:
+        with st.expander("Move items to another program"):
+            st.caption("Existing items start in Admin. Change the Program of any item, then press Save.")
+            with _form("move_items_form"):
+                ed = st.data_editor(
+                    df[["id", "full_code", "item_desc", "program"]], hide_index=True, use_container_width=True,
+                    num_rows="fixed", disabled=["id", "full_code", "item_desc"], key=f"move_items_{len(df)}",
+                    column_config={"id": "ID", "full_code": "Code", "item_desc": "Item Description",
+                                   "program": st.column_config.SelectboxColumn("Program", options=PROGRAMS,
+                                                                               required=True)})
+                if st.form_submit_button("Save programs", use_container_width=True):
+                    try:
+                        n = move_items(ed)
+                        flash("success" if n else "info", f"Moved {n} item(s)." if n else "Nothing to change.")
+                        st.rerun()
+                    except (ValueError, PermissionError) as e:
+                        st.error(str(e))
+
+
+PAGES = ["Dashboard", "Masterlist", "Add Item", "Restock / Adjust", "Remove Item", "Security"]
 ADMIN_ONLY_PAGES = {"Remove Item"}
 
 
@@ -1737,6 +2041,7 @@ def main():
         st.session_state["nav"] = PAGES[0]
     nav_items = {
         "Dashboard": ("Dashboard", ":material/dashboard:"),
+        "Masterlist": ("Masterlist", ":material/folder_open:"),
         "Add Item": ("Add Item", ":material/add_box:"),
         "Restock / Adjust": ("Restock / Adjust", ":material/inventory_2:"),
         "Remove Item": ("Remove Item", ":material/delete:"),
@@ -1832,11 +2137,24 @@ def main():
             st.warning("**Attention:** some items are at or below their minimum level. Please arrange restocking.")
 
     # ================= ADD ITEM =================
+    elif choice == "Masterlist":
+        page_header("Masterlist", "Items grouped by program, with each program's projects and procurement records.")
+        show_flash()
+        projs, procs = get_projects(), get_procurements()
+        counts = df["program"].value_counts().to_dict()
+        tabs = st.tabs(["All programs"] + [f"{p} ({counts.get(p, 0)})" for p in PROGRAMS])
+        with tabs[0]:
+            masterlist_overview(df, projs, procs, is_admin)
+        for tab, prog in zip(tabs[1:], PROGRAMS):
+            with tab:
+                program_panel(prog, df, projs, procs)
+
     elif choice == "Add Item":
         page_header("Register New Item",
                     "Add office equipment, hardware, or consumable supplies to the inventory.")
         show_flash()
         with st.form("add_form", clear_on_submit=True):
+            program = st.selectbox("Program", PROGRAMS, help="Stock is kept separately for each program.")
             c1, c2, c3 = st.columns(3)
             stock_no = c1.selectbox("Stock Number", STOCK_NUMBERS, index=None,
                                     placeholder="Type or choose") or ""
@@ -1868,8 +2186,8 @@ def main():
                         raise ValueError("Stock Number and Code are required.")
                     sn, ic, sr = normalize_code(stock_no, code, series)
                     full = add_item(name.strip(), category, quantity, price, min_threshold,
-                                    custom_unit.strip() or unit, description.strip(), sn, ic, sr or None)
-                    st.success(f"Saved **{name.strip()}** with code **{full}**.")
+                                    custom_unit.strip() or unit, description.strip(), sn, ic, sr or None, program)
+                    st.success(f"Saved **{name.strip()}** with code **{full}** under **{program}**.")
                 except ValueError as e:
                     st.error(str(e))
 
@@ -1909,7 +2227,9 @@ def main():
             cat_opts = ["All"] + CATEGORIES + sorted(set(df["category"].dropna()) - set(CATEGORIES))
             counts = df["category"].value_counts().to_dict()
             counts["All"] = len(df)
-            f1, f2 = st.columns([1, 1])
+            f0, f1, f2 = st.columns([1, 1, 1.2])
+            with f0:
+                prog = st.selectbox("Program", ["All"] + PROGRAMS, key="rs_prog")
             with f1:
                 cat = st.selectbox("Category", cat_opts, key="rs_cat",
                                    format_func=lambda c: f"{c} ({counts.get(c, 0)})")
@@ -1917,6 +2237,8 @@ def main():
                 q = st.text_input("Search item or code", placeholder="Search item name...", key="rs_q")
 
             shown = df
+            if prog != "All":
+                shown = shown[shown["program"] == prog]
             if cat != "All":
                 shown = shown[shown["category"] == cat]
             if q:
@@ -1928,13 +2250,14 @@ def main():
                 st.info("No items match this category / search.")
             else:
                 ver = st.session_state.get("tbl_ver", 0)
-                sig = hashlib.md5(f"{cat}|{q}".encode()).hexdigest()[:8]   # new filter = fresh selection
+                sig = hashlib.md5(f"{prog}|{cat}|{q}".encode()).hexdigest()[:8]   # new filter = fresh selection
                 event = st.dataframe(
-                    shown[["stock_number", "item_code", "series", "full_code", "item_desc", "quantity", "unit",
-                           "category", "price", "amount"]],
+                    shown[["program", "stock_number", "item_code", "series", "full_code", "item_desc", "quantity",
+                           "unit", "category", "price", "amount"]],
                     key=f"stock_tbl_{ver}_{sig}", hide_index=True, use_container_width=True,
                     on_select="rerun", selection_mode=["single-row", "single-cell"],
                     column_config={
+                        "program": st.column_config.TextColumn("Program", width="small"),
                         "stock_number": st.column_config.TextColumn("Stock Number", width="small"),
         "item_code": st.column_config.TextColumn("Code", width="small"),
         "series": st.column_config.TextColumn("Series", width="small"),
@@ -1950,7 +2273,7 @@ def main():
                 if pos is not None:
                     r = shown.iloc[pos]
                     stock_dialog(int(r["id"]), r["item_desc"], r["unit"], int(r["quantity"] or 0), r["full_code"],
-                                 float(r["price"] or 0))
+                                 float(r["price"] or 0), r["program"])
 
     # ================= REMOVE =================
     elif choice == "Remove Item":
