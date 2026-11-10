@@ -16,7 +16,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 import psycopg2  # noqa: F401  (driver used by SQLAlchemy)
 from sqlalchemy import create_engine
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -453,7 +453,8 @@ except Exception:
 @st.cache_resource(show_spinner=False)
 def _make_engine(db_url):
     # One shared connection pool for the whole server (no new SSL handshake per click)
-    return create_engine(db_url, pool_size=5, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
+    return create_engine(db_url, pool_size=5, max_overflow=5, pool_pre_ping=True, pool_recycle=300,
+                         connect_args={"connect_timeout": 10})   # fail fast instead of hanging
 
 
 def get_engine():
@@ -2398,5 +2399,29 @@ def main():
                         st.rerun()
 
 
+def db_error_view(err):
+    """Shown instead of a crash when the database cannot be reached."""
+    st.markdown("<div style='text-align:center; margin-top:14vh'><div class='page-title'>Can't reach the database</div>"
+                "<div class='section-sub'>The app is running, but it could not connect to its database.</div></div>",
+                unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        with st.container(border=True):
+            st.markdown(
+                "**Most common causes**\n\n"
+                "1. **The free database was paused** after a few days without use. Open your database provider "
+                "(for example Supabase), click **Restore project**, wait a few minutes, then press *Try again*.\n"
+                "2. **The connection link changed.** If the database password or link was reset, update "
+                "`DATABASE_URL` in the app's *Secrets*.\n"
+                "3. **A short outage** at the provider. Wait a minute and try again.")
+            st.button("Try again", use_container_width=True)
+            if st.query_params.get("debug"):
+                st.caption("Technical detail (for the administrator):")
+                st.code((str(getattr(err, "orig", err)).strip().splitlines() or ["(no detail)"])[0])
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except OperationalError as e:
+        db_error_view(e)
