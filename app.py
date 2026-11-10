@@ -1576,19 +1576,26 @@ def inventory_records(df, search_query=""):
                 total=float(view["amount"].sum()), base="inventory-report", key="exp_inv")
 
 
-def data_view(agg, key):
+def data_view(agg, key, by_qty=False):
     t = agg.sort_values("value", ascending=False)[["category", "value", "pct"]]
     st.dataframe(t, hide_index=True, use_container_width=True, height=300, column_config={
         "category": "Category",
-        "value": st.column_config.NumberColumn("Value", format="₱%.2f"),
+        "value": (st.column_config.NumberColumn("Quantity", format="%d") if by_qty
+                  else st.column_config.NumberColumn("Value", format="₱%.2f")),
         "pct": st.column_config.NumberColumn("Share", format="%.1f%%")})
     st.download_button("Download CSV", t.to_csv(index=False).encode(), file_name="stock-by-category.csv",
                        mime="text/csv", key=f"csv_{key}", on_click="ignore")
 
 
-def bar_panel(agg):
+def bar_panel(agg, by_qty=False):
     st.markdown("<div class='card-label'>Analytics</div>"
-                "<div class='section-title'>Value by Category</div>", unsafe_allow_html=True)
+                f"<div class='section-title'>{'Stock Quantity' if by_qty else 'Value'} by Category</div>",
+                unsafe_allow_html=True)
+    if agg["value"].sum() <= 0:
+        st.info("Nothing to chart yet: there is no stock. Add stock from the Restock / Adjust page.")
+        return
+    if by_qty:
+        st.caption("Unit prices are not set yet, so this shows stock quantity instead of value.")
     tab_chart, tab_data = st.tabs(["Chart", "Data"])  # tabs switch in the browser: instant
     with tab_chart:
         base = alt.Chart(agg).encode(
@@ -1599,11 +1606,14 @@ def bar_panel(agg):
         labels = base.mark_text(color="white", fontWeight="bold", dy=14).encode(text="label:N")
         st.altair_chart((bars + labels).properties(height=320, background="transparent"), use_container_width=True)
     with tab_data:
-        data_view(agg, "bar")
+        data_view(agg, "bar", by_qty)
 
 
-def donut_panel(agg):
+def donut_panel(agg, by_qty=False):
     st.markdown("<div class='section-title'>Stock by Category</div>", unsafe_allow_html=True)
+    if agg["value"].sum() <= 0:
+        st.info("Nothing to chart yet.")
+        return
     tab_chart, tab_data = st.tabs(["Chart", "Data"])
     with tab_chart:
         donut = alt.Chart(agg).mark_arc(innerRadius=62, outerRadius=95).encode(
@@ -1614,12 +1624,13 @@ def donut_panel(agg):
         st.altair_chart(donut, use_container_width=True)
         rows = ""
         for _, r in agg.sort_values("value", ascending=False).head(4).iterrows():
+            amount_txt = f"{r['value']:,.0f} units" if by_qty else f"₱{r['value']:,.0f}"
             rows += (f"<div class='area-row'><span><b>{r['pct']:.0f}%</b>{r['category']}</span>"
-                     f"<span>₱{r['value']:,.0f}</span></div>")
+                     f"<span>{amount_txt}</span></div>")
         st.markdown(f"<div class='card-label' style='margin-top:6px'>Top 4 Categories</div>{rows}",
                     unsafe_allow_html=True)
     with tab_data:
-        data_view(agg, "donut")
+        data_view(agg, "donut", by_qty)
 
 
 def _dismiss_dialog():
@@ -2105,8 +2116,11 @@ def main():
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
         # Chart + category breakdown
-        agg = (df.groupby("category", dropna=True)["value"].sum().reset_index()
-                 .sort_values("value"))
+        agg = df.groupby("category", dropna=True)[["value", "quantity"]].sum().reset_index()
+        by_qty = agg["value"].sum() <= 0 and agg["quantity"].sum() > 0   # no prices yet -> chart the quantity
+        if by_qty:
+            agg["value"] = agg["quantity"]
+        agg = agg.sort_values("value")
         total_val = agg["value"].sum()
         agg["pct"] = (agg["value"] / total_val * 100) if total_val > 0 else 0.0  # all-zero stock = 0%, not NaN
         agg["pct"] = agg["pct"].fillna(0)
@@ -2114,14 +2128,15 @@ def main():
 
         left, right = st.columns([2, 1])
         with left.container(border=True):
-            bar_panel(agg)
+            bar_panel(agg, by_qty)
         with right.container(border=True):
-            donut_panel(agg)
+            donut_panel(agg, by_qty)
 
         # Top valued items
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Top Items by Value</div>", unsafe_allow_html=True)
-        top = df.sort_values("value", ascending=False).head(5).copy()
+        st.markdown(f"<div class='section-title'>Top Items by {'Quantity' if by_qty else 'Value'}</div>",
+                    unsafe_allow_html=True)
+        top = df.sort_values("quantity" if by_qty else "value", ascending=False).head(5).copy()
         top.insert(0, "Rank", [f"Rank {i}" for i in range(1, len(top) + 1)])
         top = top[["Rank", "full_code", "item_desc", "category", "quantity", "unit", "value"]]
         st.dataframe(
